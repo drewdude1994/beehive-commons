@@ -1,0 +1,15 @@
+
+hive.db
+__pycache__/
+*.pyc
+
+hive.db
+__pycache__/
+*.pyc
+.env
+
+hive.db
+__pycache__/
+*.pyc
+.env
+
