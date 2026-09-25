@@ -1,3 +1,47 @@
-﻿html, body { margin:0; padding:0; width:100%; min-height:100vh; background-color: #111; color: #FFEB3B; font-family: sans-serif; }
-.container { padding: 40px; text-align: center; }
-.status-banner { margin-top: 20px; padding: 10px; background-color: #222; border: 1px solid #FFEB3B; display: inline-block; }
+html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    min-height: 100vh;
+    background-color: #fcfbf7 !important;
+}
+body {
+    position: relative !important;
+}
+/* Force video background wrapper to be completely isolated from document flow */
+.video-bg-container {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    z-index: 0 !important;
+    overflow: hidden !important;
+    pointer-events: none !important;
+}
+.bg-video {
+    position: absolute !important;
+    top: 50% !important;
+    left: 50% !important;
+    min-width: 100% !important;
+    min-height: 100% !important;
+    width: auto !important;
+    height: auto !important;
+    transform: translate(-50%, -50%) !important;
+    object-fit: cover !important;
+}
+.video-overlay {
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    background: rgba(252, 251, 247, 0.85) !important;
+    z-index: 1 !important;
+    pointer-events: none !important;
+}
+/* Ensure all dashboard elements sit cleanly above the background layer */
+header, div[id^="view-"] {
+    position: relative !important;
+    z-index: 10 !important;
+}

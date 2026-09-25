@@ -1,49 +1,174 @@
-﻿import os, sqlite3
-from flask import Flask, render_template, request, jsonify, send_from_directory
-from ledger import init_db, get_conn, barter_value, calc_fee
-
-app = Flask(__name__)
+from flask import Flask, jsonify, request, send_from_directory, redirect
+from flask_cors import CORS
+import uuid, os, json, requests, base64
+from datetime import datetime
+from ledger import get_conn, init_db, barter_value, calc_fee, HC_TO_USD_RATE, PLATFORM_FEE_PCT, PLATFORM_PAYPAL_EMAIL
+from reputation import can_payout, get_attestations
+import pathlib
+app = Flask(__name__, static_folder="static")
+CORS(app)
 init_db()
-
-@app.route('/')
-def index():
-    return render_template('index.html')
-
-@app.route('/static/boomerang.mp4')
-def boomerang_alias():
-    return '', 204
-
-@app.route('/api/login', methods=['POST'])
-def api_login():
-    data = request.json or {}
-    name = data.get('name', '').strip()
-    password = data.get('password', '').strip()
-    conn = get_conn()
-    op = conn.execute("SELECT * FROM operators WHERE name = ? AND password = ?", (name, password)).fetchone()
-    conn.close()
-    if op:
-        return jsonify({"success": True, "operator": dict(op)})
-    return jsonify({"success": False, "error": "Invalid credentials"})
-
-@app.route('/api/create_operator', methods=['POST'])
-def api_create_operator():
-    data = request.json or {}
-    name = data.get('name', '').strip()
-    paypal = data.get('paypal_email', '').strip()
-    password = data.get('password', '').strip()
-    if not name or not password:
-        return jsonify({"success": False, "error": "Name and password required"})
-    
-    conn = get_conn()
+BASE_DIR = pathlib.Path(__file__).parent
+PAYPAL_CLIENT_ID = os.getenv("PAYPAL_CLIENT_ID", "")
+PAYPAL_SECRET = os.getenv("PAYPAL_SECRET", "")
+PAYPAL_MODE = os.getenv("PAYPAL_MODE", "sandbox")
+PAYPAL_API_BASE = "https://api-m.sandbox.paypal.com" if PAYPAL_MODE == "sandbox" else "https://api-m.paypal.com"
+def paypal_enabled():
+    return bool(PAYPAL_CLIENT_ID and PAYPAL_SECRET)
+def get_paypal_access_token():
+    if not paypal_enabled():
+        return None, "PayPal not configured"
     try:
-        conn.execute("INSERT INTO operators (id, name, pools, hc_balance, usd_earned, zone, created_at, password) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), ?)",
-                     (name, name, "general", 100.0, 0.0, "Indianapolis", password))
-        conn.commit()
+        auth = base64.b64encode(f"{PAYPAL_CLIENT_ID}:{PAYPAL_SECRET}".encode()).decode()
+        headers = {"Accept": "application/json", "Accept-Language": "en_US", "Authorization": f"Basic {auth}"}
+        data = {"grant_type": "client_credentials"}
+        resp = requests.post(f"{PAYPAL_API_BASE}/v1/oauth2/token", headers=headers, data=data, timeout=15)
+        resp.raise_for_status()
+        return resp.json().get("access_token"), None
     except Exception as e:
-        conn.close()
-        return jsonify({"success": False, "error": str(e)})
+        return None, f"PayPal auth failed: {str(e)}"
+def send_paypal_payouts(payout_items, need_id):
+    if not paypal_enabled():
+        return False, None, None, "PayPal not configured - HC credited, payout pending"
+    token, err = get_paypal_access_token()
+    if not token:
+        return False, None, None, err
+    batch_id = f"BEEHIVE_{need_id}_{uuid.uuid4().hex[:6].upper()}"
+    items = []
+    for idx, item in enumerate(payout_items):
+        items.append({"recipient_type": "EMAIL", "amount": {"value": f"{float(item['amount']):.2f}", "currency": "USD"}, "receiver": item["email"], "note": item["note"][:500], "sender_item_id": f"{need_id}_{item['type']}_{idx}"})
+    payload = {"sender_batch_header": {"sender_batch_id": batch_id, "email_subject": "You have received a payout from The Beehive Commons!", "email_message": "You completed a task and have been paid!"}, "items": items}
+    try:
+        headers = {"Content-Type": "application/json", "Authorization": f"Bearer {token}", "Accept": "application/json"}
+        resp = requests.post(f"{PAYPAL_API_BASE}/v1/payments/payouts", headers=headers, json=payload, timeout=20)
+        result = resp.json()
+        if resp.status_code in [200, 201, 202]:
+            return True, result.get("batch_header", {}).get("payout_batch_id", batch_id), result, None
+        else:
+            return False, batch_id, result, f"PayPal API error: {resp.status_code} - {result}"
+    except Exception as e:
+        return False, batch_id, None, f"Payout exception: {str(e)}"
+@app.route("/static/boomerang.mp4")
+def boomerang_alias():
+    if (BASE_DIR / "static" / "videos" / "background-loop.mp4").exists():
+        return redirect("/static/videos/background-loop.mp4")
+    if (BASE_DIR / "static" / "boomerang.mp4").exists():
+        return send_from_directory("static", "boomerang.mp4")
+    return ("", 204)
+@app.route("/")
+def index():
+    p = BASE_DIR / "templates" / "index.html"
+    if p.exists():
+        return send_from_directory("templates", "index.html")
+    return jsonify({"status": "Beehive API WITH PAYPAL", "paypal_enabled": paypal_enabled()})
+@app.route("/api/config")
+def config():
+    return jsonify({"HC_TO_USD_RATE": HC_TO_USD_RATE, "PLATFORM_FEE_PCT": PLATFORM_FEE_PCT, "PLATFORM_FEE_DISPLAY": "1.4%", "PLATFORM_PAYPAL_EMAIL": PLATFORM_PAYPAL_EMAIL, "PAYPAL_MODE": PAYPAL_MODE, "PAYPAL_ENABLED": paypal_enabled(), "RATE": f"1 HC = ${HC_TO_USD_RATE}"})
+@app.route("/api/operators")
+def operators():
+    conn = get_conn()
+    rows = [dict(r) for r in conn.execute("SELECT * FROM operators").fetchall()]
     conn.close()
-    return jsonify({"success": True})
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    for r in rows:
+        try: r["pools"] = json.loads(r["pools"])
+        except: pass
+        r.pop("password", None)
+        if r.get("paypal_email"):
+            email = r["paypal_email"]
+            if "@" in email and len(email) > 3:
+                parts = email.split("@")
+                r["paypal_email_masked"] = f"{parts[0][:2]}***@{parts[1]}"
+    return jsonify(rows)
+@app.route("/api/needs")
+def needs():
+    conn = get_conn()
+    rows = [dict(r) for r in conn.execute("SELECT * FROM needs ORDER BY created_at DESC").fetchall()]
+    conn.close()
+    for r in rows:
+        try: r["required_pools"] = json.loads(r["required_pools"])
+        except: pass
+        fee_hc, fee_usd, net_hc = calc_fee(r["barter_value"])
+        r["fee_hc"] = fee_hc; r["fee_usd"] = fee_usd; r["net_hc"] = net_hc; r["net_usd"] = round(net_hc * HC_TO_USD_RATE, 2); r["gross_usd"] = round(float(r["barter_value"]) * HC_TO_USD_RATE, 2)
+    return jsonify(rows)
+@app.route("/api/ledger")
+def ledger_route():
+    conn = get_conn()
+    rows = [dict(r) for r in conn.execute("SELECT * FROM ledger ORDER BY created_at DESC LIMIT 100").fetchall()]
+    conn.close()
+    return jsonify(rows)
+@app.route("/api/payouts")
+def payouts():
+    conn = get_conn()
+    rows = [dict(r) for r in conn.execute("SELECT * FROM paypal_payouts ORDER BY created_at DESC LIMIT 100").fetchall()]
+    conn.close()
+    return jsonify(rows)
+@app.route("/api/create_need", methods=["POST"])
+def create_need():
+    data = request.json
+    nid = f"need_{uuid.uuid4().hex[:8]}"
+    baseline = float(data.get("baseline", 10)); desirability = float(data.get("desirability", 0.5)); urgency = float(data.get("urgency", 5))
+    value = barter_value(baseline, desirability, urgency)
+    conn = get_conn()
+    conn.execute("INSERT INTO needs VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", (nid, data.get("type","general"), data.get("description",""), urgency, desirability, baseline, value, data.get("zone","46250"), json.dumps(data.get("required_pools",["real_world_ops"])), "open", data.get("posted_by","drew"), None, datetime.utcnow().isoformat()))
+    conn.commit(); conn.close()
+    fee_hc, fee_usd, net_hc = calc_fee(value)
+    return jsonify({"id": nid, "barter_value": value, "fee_hc": fee_hc, "fee_usd": fee_usd, "net_hc": net_hc})
+@app.route("/api/claim", methods=["POST"])
+def claim():
+    data = request.json; conn = get_conn(); conn.execute("UPDATE needs SET claimed_by=?, status='claimed' WHERE id=?", (data["operator_id"], data["need_id"])); conn.commit(); conn.close(); return jsonify({"ok": True})
+@app.route("/api/complete", methods=["POST"])
+def complete():
+    data = request.json; conn = get_conn(); conn.execute("UPDATE needs SET status='needs_attestation' WHERE id=?", (data["need_id"],)); conn.commit(); conn.close(); return jsonify({"ok": True})
+@app.route("/api/attest", methods=["POST"])
+def attest():
+    data = request.json; conn = get_conn(); need = conn.execute("SELECT * FROM needs WHERE id=?", (data["need_id"],)).fetchone()
+    if not need: conn.close(); return jsonify({"error": "need not found"}), 404
+    aid = f"att_{uuid.uuid4().hex[:8]}"; conn.execute("INSERT INTO attestations VALUES (?,?,?,?,?)", (aid, data["need_id"], data["attester_id"], need["claimed_by"], datetime.utcnow().isoformat())); conn.commit(); conn.close()
+    atts = get_attestations(data["need_id"]); can, msg = can_payout(data["need_id"]); return jsonify({"attestations": atts, "can_payout": can, "msg": msg})
+@app.route("/api/pay", methods=["POST"])
+def pay():
+    data = request.json; need_id = data["need_id"]; conn = get_conn(); need = conn.execute("SELECT * FROM needs WHERE id=?", (need_id,)).fetchone()
+    if not need: conn.close(); return jsonify({"error": "need not found"}), 404
+    need = dict(need); can, msg = can_payout(need_id)
+    if not can: conn.close(); return jsonify({"error": msg}), 400
+    from_id = need["posted_by"]; to_id = need["claimed_by"]; amount = float(need["barter_value"]); fee_hc, fee_usd, net_hc = calc_fee(amount); fee_usd = round(fee_hc * HC_TO_USD_RATE, 2); net_usd = round(net_hc * HC_TO_USD_RATE, 2)
+    worker = conn.execute("SELECT * FROM operators WHERE id=?", (to_id,)).fetchone(); worker_email = worker["paypal_email"] if worker and "paypal_email" in worker.keys() else ""
+    if not worker_email: conn.close(); return jsonify({"error": f"Worker {to_id} has no PayPal"}), 400
+    conn.execute("UPDATE operators SET hc_balance = hc_balance - ? WHERE id=?", (amount, from_id)); conn.execute("UPDATE operators SET hc_balance = hc_balance + ?, usd_earned = usd_earned + ? WHERE id=?", (net_hc, net_usd, to_id)); conn.execute("UPDATE operators SET hc_balance = hc_balance + ?, usd_earned = usd_earned + ? WHERE id='hive_platform'", (fee_hc, fee_usd))
+    lid1 = f"led_{uuid.uuid4().hex[:8]}"; lid2 = f"led_{uuid.uuid4().hex[:8]}"; now = datetime.utcnow().isoformat()
+    conn.execute("INSERT INTO ledger VALUES (?,?,?,?,?,?,?,?,?)", (lid1, from_id, to_id, net_hc, net_usd, "task_payout_net", need_id, f"Net {need_id}", now)); conn.execute("INSERT INTO ledger VALUES (?,?,?,?,?,?,?,?,?)", (lid2, from_id, "hive_platform", fee_hc, fee_usd, "platform_fee", need_id, f"Fee 1.4% {need_id}", now)); conn.execute("UPDATE needs SET status='paid' WHERE id=?", (need_id,)); conn.commit()
+    payout_items = [{"email": worker_email, "amount": net_usd, "note": f"Payout {net_hc} HC (${net_usd}) for {need_id} 98.6%", "type": "worker"}, {"email": PLATFORM_PAYPAL_EMAIL, "amount": fee_usd, "note": f"Fee {fee_hc} HC (${fee_usd}) 1.4% for {need_id}", "type": "platform"}]
+    success, batch_id, paypal_resp, error = send_paypal_payouts(payout_items, need_id)
+    if success:
+        pid1 = f"pp_{uuid.uuid4().hex[:8]}"; pid2 = f"pp_{uuid.uuid4().hex[:8]}"
+        conn.execute("INSERT INTO paypal_payouts VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", (pid1, batch_id, need_id, from_id, to_id, worker_email, amount, fee_usd, net_usd, "worker", "sent", json.dumps(paypal_resp), now)); conn.execute("INSERT INTO paypal_payouts VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", (pid2, batch_id, need_id, from_id, "hive_platform", PLATFORM_PAYPAL_EMAIL, amount, fee_usd, fee_usd, "platform", "sent", json.dumps(paypal_resp), now)); conn.commit(); conn.close()
+        return jsonify({"ok": True, "paypal": True, "batch_id": batch_id, "net_usd": net_usd, "fee_usd": fee_usd, "message": f"PAID Worker ${net_usd} to {worker_email}, Platform ${fee_usd} to {PLATFORM_PAYPAL_EMAIL}"})
+    else:
+        conn.close(); return jsonify({"ok": True, "paypal": False, "paypal_pending": True, "net_usd": net_usd, "fee_usd": fee_usd, "error": error})
+@app.route("/api/transfer", methods=["POST"])
+def transfer():
+    data = request.json; conn = get_conn(); bal = conn.execute("SELECT hc_balance FROM operators WHERE id=?", (data["from_id"],)).fetchone()
+    if not bal or bal["hc_balance"] < float(data["amount"]): conn.close(); return jsonify({"error": "insufficient"}), 400
+    conn.execute("UPDATE operators SET hc_balance = hc_balance - ? WHERE id=?", (float(data["amount"]), data["from_id"])); conn.execute("UPDATE operators SET hc_balance = hc_balance + ? WHERE id=?", (float(data["amount"]), data["to_id"]))
+    lid = f"led_{uuid.uuid4().hex[:8]}"; conn.execute("INSERT INTO ledger VALUES (?,?,?,?,?,?,?,?,?)", (lid, data["from_id"], data["to_id"], float(data["amount"]), round(float(data["amount"])*HC_TO_USD_RATE,2), "transfer", None, data.get("note",""), datetime.utcnow().isoformat())); conn.commit(); conn.close(); return jsonify({"ok": True})
+@app.route("/api/create_operator", methods=["POST"])
+def create_operator():
+    data = request.json or {}; op_id = data.get("id","").strip().lower().replace(" ","_"); name = data.get("name","").strip(); password = data.get("password",""); paypal_email = data.get("paypal","").strip() or data.get("paypal_email","").strip()
+    if not op_id or not name or not password: return jsonify({"error": "Name and password required"}), 400
+    if not paypal_email: return jsonify({"error": "PayPal email required"}), 400
+    conn = get_conn()
+    if conn.execute("SELECT id FROM operators WHERE id=?", (op_id,)).fetchone(): conn.close(); return jsonify({"error": f"Operator {op_id} exists"}), 400
+    conn.execute("INSERT INTO operators (id, name, pools, hc_balance, usd_earned, zone, password, paypal_email, created_at) VALUES (?,?,?,?,?,?,?,?,?)", (op_id, name, json.dumps(["real_world_ops"]), 100.0, 0.0, "46250", password, paypal_email, datetime.utcnow().isoformat())); conn.commit(); conn.close(); return jsonify({"ok": True, "id": op_id})
+@app.route("/api/login", methods=["POST"])
+def login():
+    data = request.json or {}; op_id = data.get("id","").strip().lower(); handle = data.get("handle","").strip(); password = data.get("password","")
+    if not op_id and handle: op_id = handle.lower().replace(" ","_")
+    if not op_id or not password: return jsonify({"error": "Handle and password required"}), 400
+    conn = get_conn(); row = conn.execute("SELECT * FROM operators WHERE id=?", (op_id,)).fetchone()
+    if not row: row = conn.execute("SELECT * FROM operators WHERE lower(name)=?", (handle.lower() if handle else op_id,)).fetchone()
+    if not row: conn.close(); return jsonify({"error": "Operator not found"}), 404
+    stored = row["password"] if "password" in row.keys() else ""
+    if stored and stored != password: conn.close(); return jsonify({"error": "Invalid password"}), 401
+    result = dict(row); conn.close(); result.pop("password", None); result["paypal_configured"] = paypal_enabled(); result["platform_fee"] = "1.4%"; return jsonify(result)
+if __name__ == "__main__":
+    print("BEEHIVE PAYPAL LIVE"); app.run(host="0.0.0.0", port=5000, debug=True)
