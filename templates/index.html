@@ -1,63 +1,14 @@
-<!DOCTYPE html>
-<html lang="en">
+﻿<!DOCTYPE html>
+<html>
 <head>
-    <meta charset="UTF-8">
     <title>The Beehive // Algorithmic Commons</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
     <div class="container">
         <h1>The Beehive</h1>
         <p>Algorithmic Commons & Operator Profile</p>
-        
-        <div class="profile-section">
-            <h3>Operator Profile</h3>
-            <form onsubmit="saveProfile(event)">
-                <div class="form-group">
-                    <label>Email:</label>
-                    <input type="email" name="email" placeholder="Enter email...">
-                </div>
-                <div class="form-group">
-                    <label>Bio:</label>
-                    <textarea name="bio" rows="3" placeholder="Enter bio..."></textarea>
-                </div>
-                <button type="submit" id="save-profile-btn">Save Profile Changes</button>
-            </form>
-        </div>
+        <div class="status-banner">✅ PayPal System Active</div>
     </div>
-
-    <script>
-    async function saveProfile(event) {
-        if (event) event.preventDefault();
-        const emailInput = document.querySelector('input[name="email"]');
-        const bioInput = document.querySelector('textarea[name="bio"]');
-        const btn = document.getElementById('save-profile-btn');
-        
-        const email = emailInput ? emailInput.value : '';
-        const bio = bioInput ? bioInput.value : '';
-        
-        const res = await fetch('/api/update_profile', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ email, bio })
-        });
-        
-        if (res.ok) {
-            const originalText = btn.innerText;
-            btn.innerText = '? Saved Successfully';
-            btn.style.color = '#00ff66';
-            btn.style.borderColor = '#00ff66';
-            
-            if (emailInput) emailInput.value = '';
-            if (bioInput) bioInput.value = '';
-            
-            setTimeout(() => {
-                btn.innerText = originalText;
-                btn.style.color = '';
-                btn.style.borderColor = '';
-            }, 2500);
-        }
-    }
-    </script>
 </body>
 </html>
