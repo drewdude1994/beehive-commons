@@ -1,289 +1,228 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>The Beehive // FINAL v4 - 1.4% FEE</title>
-<script src="https://cdn.tailwindcss.com"></script>
-<link rel="stylesheet" href="/static/style.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Beehive // Algorithmic Commons</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/static/style.css">
 </head>
-<body class="bg-black text-white font-mono">
-<div class="video-bg-container" id="video-container">
-<video autoplay muted loop playsinline class="bg-video" id="bg-video" onerror="document.getElementById('video-container').style.display='none'">
-<source src="/static/videos/background-loop.mp4" type="video/mp4">
-<source src="/static/boomerang.mp4" type="video/mp4">
-</video>
-<div class="video-overlay"></div>
-</div>
+<body class="bg-amber-50 text-black font-mono p-4">
 
-<header class="border-b-2 border-yellow-400 px-4 py-3 flex justify-between items-center sticky top-0 z-20">
-<div>
-<h1 class="text-sm md:text-base font-black tracking-widest" style="color:#FFFF00;">// THE BEEHIVE COMMONS - FINAL v4 - 1.4% FEE</h1>
-</div>
-<nav class="flex gap-2">
-<button id="btn-home" class="px-3 py-1 bg-white text-black text-xs font-black border-2 border-black hover:bg-black hover:text-white transition">HOME</button>
-<button id="btn-signup" class="px-3 py-1 bg-white text-black text-xs font-black border-2 border-black hover:bg-black hover:text-white transition">SIGNUP</button>
-<button id="btn-post" class="px-3 py-1 bg-white text-black text-xs font-black border-2 border-black hover:bg-black hover:text-white transition">+ POST NEED</button>
-</nav>
-</header>
+    <!-- Background Video Loop Layer - Fixed, isolated from flow -->
+    <div class="video-bg-container">
+      <video autoplay muted loop playsinline class="bg-video">
+        <source src="/static/videos/background-loop.mp4" type="video/mp4">
+      </video>
+      <div class="video-overlay"></div>
+    </div>
 
-<main class="max-w-3xl mx-auto px-4 py-6 space-y-6 relative z-10">
-
-<!-- PLATFORM STATS - HIVE EARNS 1.4% -->
-<div id="platform-box" class="box-green p-5">
-<h2 class="text-base font-black mb-3 tracking-wide" style="color:#39FF14;">// PLATFORM STATS - HIVE EARNS 1.4%</h2>
-<div class="text-xs space-y-1 font-bold">
-<div><span class="text-white">Fee:</span> <span class="text-white">1.4% per job</span></div>
-<div><span class="text-white">PayPal:</span> <span class="text-white">drewdude1994@gmail.com</span></div>
-<div><span class="text-white">Total Earned:</span> <span id="total-earned" class="text-white">$0 from 0 jobs</span></div>
-<div class="text-[11px] text-gray-300">$10 job = $0.14 to you, $9.86 to worker</div>
-</div>
-<div class="flex flex-wrap gap-2 mt-4">
-<button id="btn-collect" class="btn-paypal px-3 py-1 text-xs">★ COLLECT $0 FEES via PayPal</button>
-<a href="https://paypal.me/drewdude1994" target="_blank" class="btn-paypal px-3 py-1 text-xs inline-block text-center">PayPal.me Fees</a>
-</div>
-</div>
-
-<!-- SIGNUP - Use REAL PayPal Email - FIXED -->
-<div id="signup-box" class="box-yellow p-5">
-<h2 class="text-base font-black mb-4 tracking-wide" style="color:#FFFF00;">// SIGNUP - Use REAL PayPal Email - FIXED</h2>
-
-<form id="signup-form" class="space-y-4">
-<div>
-<label class="text-[11px] font-black" style="color:#FFFF00;">Full Name *</label>
-<input id="su-name" type="text" required placeholder="John Doe" class="input-white w-full p-2 mt-1 text-sm">
-</div>
-<div>
-<label class="text-[11px] font-black" style="color:#FFFF00;">Email *</label>
-<input id="su-email" type="email" required placeholder="your.email@example.com" class="input-white w-full p-2 mt-1 text-sm">
-</div>
-<div>
-<label class="text-[11px] font-black" style="color:#FFFF00;">PayPal Email * <span class="font-normal text-[10px]">(Get paid - 98.6% to you, 1.4% platform fee to drewdude1994@gmail.com)</span></label>
-<input id="su-paypal" type="email" required placeholder="your.paypal@example.com" class="input-white w-full p-2 mt-1 text-sm">
-</div>
-<div>
-<label class="text-[11px] font-black" style="color:#FFFF00;">Password *</label>
-<input id="su-password" type="password" required placeholder="Create a password" class="input-white w-full p-2 mt-1 text-sm">
-</div>
-<button type="submit" class="btn-create w-full py-3 text-sm font-black tracking-wide">CREATE ACCOUNT - WORKS NOW</button>
-</form>
-
-<div class="text-[10px] text-gray-400 mt-3 font-mono">
-Current: <span id="current-op">drew</span> | <span id="current-email">drew@beehive.commons</span> | Platform fee: 1.4% -> drewdude1994@gmail.com
-</div>
-
-<div id="signup-msg" class="text-xs mt-3 hidden"></div>
-</div>
-
-<!-- CREATE A NEED -->
-<div id="create-box" class="box-yellow p-5 border-purple-500" style="border-color:#A855F7!important; box-shadow:4px 4px 0px 0px #A855F7!important;">
-<h2 class="text-base font-black mb-4 tracking-wide" style="color:#A855F7;">// CREATE A NEED</h2>
-<form id="need-form" class="space-y-3">
-<div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-<div>
-<label class="text-[11px] font-black" style="color:#FFFF00;">Title *</label>
-<input id="need-title" type="text" required placeholder="Fix drainage, food delivery..." class="input-white w-full p-2 mt-1 text-sm">
-</div>
-<div>
-<label class="text-[11px] font-black" style="color:#FFFF00;">Amount $ / HC *</label>
-<input id="need-baseline" type="number" value="10" required class="input-white w-full p-2 mt-1 text-sm">
-</div>
-</div>
-<div>
-<label class="text-[11px] font-black" style="color:#FFFF00;">Description</label>
-<textarea id="need-desc" placeholder="What needs to be done..." class="input-white w-full p-2 mt-1 text-sm h-20"></textarea>
-</div>
-<div id="fee-preview" class="text-xs border border-dashed border-yellow-400 p-2 bg-black text-yellow-300"></div>
-<button type="submit" class="btn-create w-full py-2 text-sm font-black">POST NEED - 1.4% FEE TO PLATFORM</button>
-</form>
-</div>
-
-<!-- JOBS / MARKETPLACE -->
-<div id="jobs-box" class="box-green p-5">
-<h2 class="text-base font-black mb-4 tracking-wide" style="color:#39FF14;">// AVAILABLE JOBS - CLAIM & GET PAID 98.6%</h2>
-<div id="needs-list" class="space-y-3 text-xs">Loading jobs...</div>
-</div>
-
-<!-- OPERATORS -->
-<div class="box-yellow p-4">
-<h3 class="text-xs font-black mb-2" style="color:#FFFF00;">// OPERATORS - REAL PAYPAL</h3>
-<div id="operators-list" class="text-xs space-y-1">Loading...</div>
-</div>
-
-<!-- PAYOUTS LOG -->
-<div class="box-green p-4">
-<h3 class="text-xs font-black mb-2" style="color:#39FF14;">// PAYPAL PAYOUTS LOG - 1.4% SPLIT</h3>
-<div id="payouts-list" class="text-xs space-y-1">Loading...</div>
-</div>
-
-</main>
-
-<script>
-const PLATFORM_EMAIL = "drewdude1994@gmail.com";
-const FEE_PCT = 0.014;
-
-function $(id){return document.getElementById(id);}
-
-document.addEventListener("DOMContentLoaded", ()=>{
-  loadPlatformStats();
-  loadNeeds();
-  loadOperators();
-  loadPayouts();
-  calcPreview();
-
-  $("btn-home")?.addEventListener("click", ()=> window.scrollTo({top:0, behavior:"smooth"}));
-  $("btn-signup")?.addEventListener("click", ()=> $("signup-box")?.scrollIntoView({behavior:"smooth"}));
-  $("btn-post")?.addEventListener("click", ()=> $("create-box")?.scrollIntoView({behavior:"smooth"}));
-  $("btn-collect")?.addEventListener("click", ()=>{ window.open("https://paypal.me/drewdude1994","_blank"); });
-
-  ["need-baseline","need-title"].forEach(id=>{
-    $(id)?.addEventListener("input", calcPreview);
-  });
-});
-
-function calcPreview(){
-  let baseline = parseFloat($("need-baseline")?.value||10);
-  let fee = (baseline * FEE_PCT).toFixed(2);
-  let net = (baseline * (1-FEE_PCT)).toFixed(2);
-  let el = $("fee-preview");
-  if(el) el.innerHTML = `$${baseline} job = $${fee} to platform (${PLATFORM_EMAIL}) → $${net} to worker (98.6%) | 1.4% fee = 1.4% per job`;
-}
-
-async function loadPlatformStats(){
-  try{
-    let res = await fetch("/api/operators");
-    let ops = await res.json();
-    let plat = ops.find(o=>o.id==="hive_platform");
-    let earned = 0, jobs = 0;
-    try{
-      let pres = await fetch("/api/payouts");
-      let payouts = await pres.json();
-      let platformPayouts = payouts.filter(p=>p.type==="platform" && p.status==="sent");
-      earned = platformPayouts.reduce((s,p)=> s + parseFloat(p.net_amount||p.fee_amount||0), 0);
-      jobs = new Set(payouts.map(p=>p.need_id)).size;
-      if(plat && plat.usd_earned) earned = Math.max(earned, plat.usd_earned);
-    }catch(e){ if(plat) earned = plat.usd_earned||0; }
-    $("total-earned").textContent = `$${earned.toFixed(2)} from ${jobs} jobs`;
-    $("btn-collect").textContent = `★ COLLECT $${earned.toFixed(0)} FEES via PayPal`;
-    if(plat) $("current-op").textContent = plat.name||"hive_platform";
-  }catch(e){ console.log("stats err", e); }
-}
-
-async function loadNeeds(){
-  try{
-    let res = await fetch("/api/needs");
-    let data = await res.json();
-    let div = $("needs-list");
-    if(!data || data.length===0){ div.innerHTML = "<div class='text-gray-400'>No jobs yet - post one!</div>"; return; }
-    div.innerHTML = data.map(n=>{
-      let gross = n.gross_usd||n.barter_value;
-      let net = n.net_usd|| (n.barter_value*0.986).toFixed(2);
-      let fee = n.fee_usd|| (n.barter_value*0.014).toFixed(2);
-      return `<div class="border border-green-400 bg-black p-3">
-        <div class="font-black text-sm" style="color:#39FF14;">${n.type||'Need'} - $${gross} (${n.barter_value} HC) - ${n.status}</div>
-        <div class="text-xs text-gray-300 mt-1">${n.description||''}</div>
-        <div class="text-[10px] text-yellow-300 mt-2">Fee: $${fee} (1.4%) → ${PLATFORM_EMAIL} | Net: $${net} (98.6%) to worker | $10 = $0.14 to you, $9.86 to worker</div>
-        <div class="flex gap-2 mt-2">
-          <button onclick="claimNeed('${n.id}')" class="btn-white px-3 py-1 text-[11px]">CLAIM + GET PAID 98.6%</button>
-          <button onclick="completeNeed('${n.id}')" class="btn-paypal px-3 py-1 text-[11px]">COMPLETE</button>
+    <header class="border-b-2 border-black pb-4 mb-6 flex justify-between items-center relative z-10">
+        <div>
+            <h1 class="text-xl font-bold">// THE BEEHIVE COMMONS</h1>
+            <p class="text-xs opacity-75">SQLite Ledger: hive.db | Cut: 1.4% | Phone: 10.0.0.83:5000</p>
         </div>
-      </div>`;
-    }).join("");
-  }catch(e){ console.error(e); }
-}
+        <nav class="space-x-2">
+            <button id="btn-menu" class="px-3 py-1 border-2 border-black bg-white text-xs font-bold hover:bg-black hover:text-white transition">HOME</button>
+            <button id="btn-creator" class="px-3 py-1 border-2 border-black bg-white text-xs font-bold hover:bg-black hover:text-white transition">+ POST NEED</button>
+            <button id="btn-marketplace" class="px-3 py-1 border-2 border-black bg-white text-xs font-bold hover:bg-black hover:text-white transition">JOBS</button>
+            <button id="btn-profile" class="px-3 py-1 border-2 border-black bg-white text-xs font-bold hover:bg-black hover:text-white transition">PROFILE</button>
+        </nav>
+    </header>
 
-window.claimNeed = async function(id){
-  let op = localStorage.getItem("beehive_operator_id") || prompt("Your operator handle (must have PayPal):","drew");
-  if(!op) return;
-  let res = await fetch("/api/claim",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({need_id:id, operator_id:op})});
-  let j = await res.json();
-  alert("Claimed: "+JSON.stringify(j));
-  loadNeeds();
-}
-window.completeNeed = async function(id){
-  await fetch("/api/complete",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({need_id:id})});
-  let att = prompt("Attester handle (need 2-3 attestations):","josh");
-  if(att){
-    await fetch("/api/attest",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({need_id:id, attester_id:att})});
-    await fetch("/api/attest",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({need_id:id, attester_id:"neighbor_1"})});
-  }
-  if(confirm("Try PayPal payout now? (98.6% worker / 1.4% platform)")){
-    let res = await fetch("/api/pay",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({need_id:id})});
-    let j = await res.json();
-    alert(JSON.stringify(j, null, 2));
-  }
-  loadNeeds(); loadPlatformStats(); loadPayouts();
-}
+    <div id="view-menu" class="max-w-xl mx-auto space-y-4 py-8 relative z-10" style="display: block;">
+        <div class="border-2 border-black p-6 bg-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
+            <h2 class="text-2xl font-bold mb-2">OPERATOR DASHBOARD</h2>
+            <p class="text-sm text-gray-600 mb-6">Select an option below to manage tasks, review balances, or post community needs. File ledger: hive.db - 1.4% goes to hive_platform.</p>
+            <div class="grid grid-cols-1 gap-3">
+                <button id="card-creator" class="p-4 border-2 border-black text-left font-bold hover:bg-black hover:text-white transition flex justify-between items-center"><span>+ Post a New Need</span><span>→</span></button>
+                <button id="card-marketplace" class="p-4 border-2 border-black text-left font-bold hover:bg-black hover:text-white transition flex justify-between items-center"><span>Browse & Bid Jobs</span><span>→</span></button>
+                <button id="card-profile" class="p-4 border-2 border-black text-left font-bold hover:bg-black hover:text-white transition flex justify-between items-center"><span>My Profile & Ledger</span><span>→</span></button>
+            </div>
+        </div>
+        <div class="border-2 border-black p-4 bg-white mt-4">
+            <h3 class="text-xs font-bold mb-2">PLATFORM EARNINGS (1.4%)</h3>
+            <div id="platform-earnings" class="text-xs">Loading...</div>
+        </div>
+    </div>
 
-async function loadOperators(){
-  try{
-    let res = await fetch("/api/operators");
-    let data = await res.json();
-    let div = $("operators-list");
-    div.innerHTML = data.filter(o=>o.id!=="hive_platform").map(o=>{
-      return `<div class="flex justify-between border-b border-gray-700 py-1"><span><b>${o.name||o.id}</b> - ${o.paypal_email_masked||o.paypal_email||'no paypal'} - ${o.hc_balance} HC</span><span class="text-yellow-300">$${(o.usd_earned||0).toFixed(2)}</span></div>`;
-    }).join("") || "<div class='text-gray-400'>No operators</div>";
-  }catch(e){}
-}
+    <div id="view-creator" class="max-w-xl mx-auto space-y-4 relative z-10" style="display: none;">
+        <h2 class="text-xl font-bold">// CREATE A NEED</h2>
+        <div class="border-2 border-black p-4 bg-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
+            <form id="need-form" class="space-y-3">
+                <div><label class="text-xs font-bold">Title:</label><input id="need-title" type="text" required class="w-full border-2 border-black p-2 mt-1"></div>
+                <div><label class="text-xs font-bold">Description:</label><textarea id="need-desc" class="w-full border-2 border-black p-2 mt-1"></textarea></div>
+                <div class="grid grid-cols-3 gap-2">
+                    <div><label class="text-xs font-bold">Baseline:</label><input id="need-baseline" type="number" value="10" class="w-full border-2 border-black p-2 mt-1"></div>
+                    <div><label class="text-xs font-bold">Desirability (0.1=disliked):</label><input id="need-desirability" type="number" step="0.1" value="0.5" class="w-full border-2 border-black p-2 mt-1"></div>
+                    <div><label class="text-xs font-bold">Urgency (1-10):</label><input id="need-urgency" type="number" value="5" class="w-full border-2 border-black p-2 mt-1"></div>
+                </div>
+                <div id="fee-preview" class="text-xs border-2 border-dashed border-black p-2 bg-amber-50"></div>
+                <button type="submit" class="w-full bg-black text-white font-bold p-2 border-2 border-black hover:bg-white hover:text-black transition">SUBMIT NEED (1.4% FEE)</button>
+            </form>
+        </div>
+    </div>
 
-async function loadPayouts(){
-  try{
-    let res = await fetch("/api/payouts");
-    let data = await res.json();
-    let div = $("payouts-list");
-    if(!data||data.length===0){ div.innerHTML="<div class='text-gray-400'>No payouts yet</div>"; return; }
-    div.innerHTML = data.slice(0,20).map(p=>{
-      return `<div class="flex justify-between border-b border-gray-800 py-1"><span><b style="color:${p.type==='platform'?'#FFFF00':'#39FF14'}">${p.type}</b> → ${p.to_email} - $${p.net_amount} - ${p.status}</span><span class="text-[10px]">${p.need_id||''}</span></div>`;
-    }).join("");
-  }catch(e){}
-}
+    <div id="view-marketplace" class="max-w-xl mx-auto space-y-4 relative z-10" style="display: none;">
+        <h2 class="text-xl font-bold">// AVAILABLE JOBS</h2>
+        <div id="needs-list" class="space-y-2">Loading needs...</div>
+    </div>
 
-// SIGNUP - Use REAL PayPal Email - FIXED
-$("signup-form")?.addEventListener("submit", async (e)=>{
-  e.preventDefault();
-  let name = $("su-name").value.trim();
-  let email = $("su-email").value.trim();
-  let paypal = $("su-paypal").value.trim();
-  let password = $("su-password").value;
-  if(!paypal.includes("@")){ alert("Use REAL PayPal email - must contain @"); return; }
-  let handle = name.toLowerCase().replace(/\s+/g,"_").replace(/[^a-z0-9_]/g,"");
-  if(handle.length<2){ alert("Name too short"); return; }
-  let msgEl = $("signup-msg");
-  msgEl.classList.remove("hidden");
-  msgEl.textContent = "Creating account...";
-  msgEl.className = "text-xs mt-3 text-yellow-300";
-  try{
-    let res = await fetch("/api/create_operator",{
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({id:handle, name:name, email:email, paypal:paypal, paypal_email:paypal, password:password})
-    });
-    let j = await res.json();
-    if(j.error){ msgEl.textContent = "Error: "+j.error; msgEl.className="text-xs mt-3 text-red-400"; return; }
-    localStorage.setItem("beehive_operator_id", j.id);
-    $("current-op").textContent = j.id;
-    $("current-email").textContent = email;
-    msgEl.textContent = `✅ Account created: ${j.id} with PayPal ${paypal} - 98.6% to you, 1.4% to ${PLATFORM_EMAIL} - WORKS NOW!`;
-    msgEl.className="text-xs mt-3 text-green-400 font-black";
-    alert(`Account created: ${j.id}\nPayPal: ${paypal}\nYou get 98.6%, Platform gets 1.4% → ${PLATFORM_EMAIL}\nWORKS NOW!`);
-    loadOperators();
-  }catch(err){
-    msgEl.textContent = "Failed: "+err;
-    msgEl.className="text-xs mt-3 text-red-400";
-  }
-});
+    <div id="view-profile" class="max-w-xl mx-auto space-y-4 relative z-10" style="display: none;">
+        <h2 class="text-xl font-bold">// OPERATOR PROFILE & ONBOARDING</h2>
+        <div class="border-2 border-black p-4 bg-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] space-y-4">
+            <div class="flex border-b-2 border-black pb-2 space-x-2">
+                <button id="tab-login" class="px-4 py-1 border-2 border-black bg-black text-white text-xs font-bold">LOG IN</button>
+                <button id="tab-create" class="px-4 py-1 border-2 border-black bg-white text-black text-xs font-bold hover:bg-gray-100">CREATE NEW PROFILE</button>
+            </div>
+            <div id="section-login" class="space-y-3">
+                <p class="text-xs text-gray-600">Enter your operator handle to access your existing ledger and portfolio:</p>
+                <div><label class="text-xs font-bold">Operator Name / Handle:</label><input id="login-name" type="text" class="w-full border-2 border-black p-2 mt-1"></div>
+                <button id="btn-submit-login" class="w-full bg-black text-white font-bold p-2 border-2 border-black hover:bg-white hover:text-black transition">ACCESS LEDGER</button>
+            </div>
+            <div id="section-create" class="space-y-3" style="display: none;">
+                <form id="profile-form" class="space-y-3">
+                    <div><label class="text-xs font-bold">Operator Name:</label><input id="prof-name" type="text" required class="w-full border-2 border-black p-2 mt-1"></div>
+                    <div><label class="text-xs font-bold">PayPal Email (for job payouts):</label><input id="prof-paypal" type="email" required placeholder="name@example.com" class="w-full border-2 border-black p-2 mt-1"></div>
+                    <div><label class="text-xs font-bold">Skills (comma separated):</label><input id="prof-skills" type="text" placeholder="e.g., Python, UI Design" class="w-full border-2 border-black p-2 mt-1"></div>
+                    <div><label class="text-xs font-bold">Bio:</label><textarea id="prof-bio" rows="3" placeholder="Tell the commons about your background..." class="w-full border-2 border-black p-2 mt-1"></textarea></div>
+                    <button type="submit" class="w-full bg-black text-white font-bold p-2 border-2 border-black hover:bg-white hover:text-black transition">REGISTER NEW PROFILE</button>
+                </form>
+            </div>
+        </div>
+        <div class="border-2 border-black p-4 bg-white">
+            <h3 class="text-sm font-bold mb-2">ACTIVE COMMONS OPERATORS (hive.db)</h3>
+            <div id="operators-list" class="space-y-2 text-xs">Loading operators...</div>
+        </div>
+    </div>
 
-$("need-form")?.addEventListener("submit", async (e)=>{
-  e.preventDefault();
-  let title = $("need-title").value;
-  let desc = $("need-desc").value;
-  let baseline = parseFloat($("need-baseline").value);
-  let op = localStorage.getItem("beehive_operator_id")||"drew";
-  let res = await fetch("/api/create_need",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({type:title, description:desc, baseline:baseline, desirability:0.5, urgency:5, posted_by:op, required_pools:["real_world_ops"]})});
-  let j = await res.json();
-  alert(`Need created: ${j.id} - $${baseline} - Fee $${j.fee_usd} to ${PLATFORM_EMAIL}, Net $${j.net_usd||j.barter_value} to worker`);
-  $("need-title").value=""; $("need-desc").value="";
-  loadNeeds();
-});
-</script>
+    <script>
+        document.addEventListener("DOMContentLoaded", () => {
+            window.switchView = function(name) {
+                ['menu','creator','marketplace','profile'].forEach(v => {
+                    let el = document.getElementById('view-' + v);
+                    if(el) el.style.display = 'none';
+                });
+                let target = document.getElementById('view-' + name);
+                if(target) target.style.display = 'block';
+                if(name === 'marketplace') loadNeeds();
+                if(name === 'profile') loadOperators();
+                if(name === 'menu') loadPlatformEarnings();
+            }
+
+            function calcPreview() {
+                const b = parseFloat(document.getElementById('need-baseline')?.value || 10);
+                const d = parseFloat(document.getElementById('need-desirability')?.value || 0.5);
+                const u = parseFloat(document.getElementById('need-urgency')?.value || 5);
+                const val = b / Math.max(0.1,d) * u;
+                const fee = val * 0.014;
+                const net = val - fee;
+                const el = document.getElementById('fee-preview');
+                if(el) el.innerHTML = `Barter Value: ${val.toFixed(2)} HC | Your Fee (1.4%): ${fee.toFixed(4)} HC ($${fee.toFixed(2)}) | Worker Gets: ${net.toFixed(4)} HC`;
+            }
+            ['need-baseline','need-desirability','need-urgency'].forEach(id=>{
+                let el=document.getElementById(id);
+                if(el) el.addEventListener('input', calcPreview);
+            });
+            calcPreview();
+
+            async function loadPlatformEarnings(){
+                try{
+                    let res=await fetch('/api/operators');
+                    let data=await res.json();
+                    let plat=data.find(o=>o.id==='hive_platform');
+                    let div=document.getElementById('platform-earnings');
+                    if(plat && div) div.innerHTML = `<b>${plat.hc_balance.toFixed(4)} HC</b> / <b>$${(plat.usd_earned||0).toFixed(2)} USD</b> earned from 1.4% fees`;
+                }catch(e){}
+            }
+            loadPlatformEarnings();
+
+            async function loadNeeds() {
+                try {
+                    let res = await fetch('/api/needs');
+                    let data = await res.json();
+                    let div = document.getElementById('needs-list');
+                    if(!data || data.length === 0) {
+                        div.innerHTML = '<p class="text-sm bg-white p-4 border-2 border-black">No active jobs found. Post one!</p>';
+                        return;
+                    }
+                    div.innerHTML = data.map(n => `<div class="border-2 border-black p-4 bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]"><strong>${n.type || n.title || 'Need'} - ${n.barter_value} HC</strong><p class="text-xs mt-1">${n.description || 'No description'}</p><p class="text-[10px] mt-2">Fee: ${n.fee_hc||''} HC ($${n.fee_usd||''}) | Net: ${n.net_hc||''} HC | Status: ${n.status}</p><div class="mt-2 flex gap-2"><button onclick="claimNeed('${n.id}')" class="text-xs border-2 border-black px-2 py-1 bg-black text-white">CLAIM</button><button onclick="completeNeed('${n.id}')" class="text-xs border-2 border-black px-2 py-1">COMPLETE</button></div></div>`).join('');
+                } catch (err) { console.error(err); }
+            }
+            window.claimNeed = async function(id){
+                let op = prompt('Your operator ID (drew/josh/neighbor_1):','drew');
+                if(!op) return;
+                await fetch('/api/claim',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({need_id:id,operator_id:op})});
+                loadNeeds();
+            }
+            window.completeNeed = async function(id){
+                await fetch('/api/complete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({need_id:id})});
+                let att = prompt('Attester ID to attest:','josh');
+                if(att){
+                    await fetch('/api/attest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({need_id:id,attester_id:att})});
+                    await fetch('/api/attest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({need_id:id,attester_id:'neighbor_1'})});
+                }
+                let pay = confirm('Try to pay now? (needs 2-3 attestations)');
+                if(pay){
+                    let res = await fetch('/api/pay',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({need_id:id})});
+                    let j = await res.json();
+                    alert(JSON.stringify(j));
+                }
+                loadNeeds();
+            }
+
+            async function loadOperators() {
+                try {
+                    let res = await fetch('/api/operators');
+                    let data = await res.json();
+                    let div = document.getElementById('operators-list');
+                    if(!data || data.length === 0) {
+                        div.innerHTML = '<p class="text-sm">No operators found in SQLite ledger.</p>';
+                        return;
+                    }
+                    div.innerHTML = data.map(o => `<div class="border-b border-black py-2"><div><b>${o.name||o.id}</b> — <i>${o.pools||''}</i></div><div class="text-right font-bold text-xs mt-1">${o.hc_balance} HC / $${o.usd_earned||0} USD</div></div>`).join('');
+                } catch (err) { console.error(err); }
+            }
+
+            ['menu','creator','marketplace','profile'].forEach(id => {
+                let btn = document.getElementById('btn-' + id);
+                if(btn) btn.addEventListener('click', () => switchView(id));
+                let card = document.getElementById('card-' + id);
+                if(card) card.addEventListener('click', () => switchView(id));
+            });
+
+            const tabLogin = document.getElementById('tab-login');
+            const tabCreate = document.getElementById('tab-create');
+            const sectionLogin = document.getElementById('section-login');
+            const sectionCreate = document.getElementById('section-create');
+            if(tabLogin && tabCreate) {
+                tabLogin.addEventListener('click', () => {
+                    tabLogin.className = 'px-4 py-1 border-2 border-black bg-black text-white text-xs font-bold';
+                    tabCreate.className = 'px-4 py-1 border-2 border-black bg-white text-black text-xs font-bold hover:bg-gray-100';
+                    sectionLogin.style.display = 'block';
+                    sectionCreate.style.display = 'none';
+                });
+                tabCreate.addEventListener('click', () => {
+                    tabCreate.className = 'px-4 py-1 border-2 border-black bg-black text-white text-xs font-bold';
+                    tabLogin.className = 'px-4 py-1 border-2 border-black bg-white text-black text-xs font-bold hover:bg-gray-100';
+                    sectionCreate.style.display = 'block';
+                    sectionLogin.style.display = 'none';
+                });
+            }
+
+            document.getElementById('need-form')?.addEventListener('submit', async (e)=>{
+                e.preventDefault();
+                let title = document.getElementById('need-title').value;
+                let desc = document.getElementById('need-desc').value;
+                let baseline = parseFloat(document.getElementById('need-baseline').value);
+                let desirability = parseFloat(document.getElementById('need-desirability').value);
+                let urgency = parseFloat(document.getElementById('need-urgency').value);
+                let res = await fetch('/api/create_need',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:title,description:desc,baseline,desirability,urgency,posted_by:'drew',required_pools:['real_world_ops']})});
+                let j = await res.json();
+                alert('Created: '+j.id+' Value: '+j.barter_value+' HC Fee: '+j.fee_usd+' USD');
+                switchView('marketplace');
+            });
+        });
+    </script>
 </body>
 </html>
