@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -10,12 +10,13 @@
 <body class="bg-amber-50 text-black font-mono p-4">
 
     <!-- Background Video Loop Layer - Fixed, isolated from flow -->
-    <div class="video-bg-container">
-      <video autoplay muted loop playsinline class="bg-video">
-        <source src="/static/videos/background-loop.mp4" type="video/mp4">
-      </video>
-      <div class="video-overlay"></div>
-    </div>
+    <div class="video-bg-container" id="video-container">
+  <video autoplay muted loop playsinline class="bg-video" id="bg-video">
+    <source src="/static/boomerang.mp4" type="video/mp4">
+    <source src="/static/videos/background-loop.mp4" type="video/mp4">
+  </video>
+  <div class="video-overlay"></div>
+</div>
 
     <header class="border-b-2 border-black pb-4 mb-6 flex justify-between items-center relative z-10">
         <div>
@@ -35,9 +36,9 @@
             <h2 class="text-2xl font-bold mb-2">OPERATOR DASHBOARD</h2>
             <p class="text-sm text-gray-600 mb-6">Select an option below to manage tasks, review balances, or post community needs. File ledger: hive.db - 1.4% goes to hive_platform.</p>
             <div class="grid grid-cols-1 gap-3">
-                <button id="card-creator" class="p-4 border-2 border-black text-left font-bold hover:bg-black hover:text-white transition flex justify-between items-center"><span>+ Post a New Need</span><span>→</span></button>
-                <button id="card-marketplace" class="p-4 border-2 border-black text-left font-bold hover:bg-black hover:text-white transition flex justify-between items-center"><span>Browse & Bid Jobs</span><span>→</span></button>
-                <button id="card-profile" class="p-4 border-2 border-black text-left font-bold hover:bg-black hover:text-white transition flex justify-between items-center"><span>My Profile & Ledger</span><span>→</span></button>
+                <button id="card-creator" class="p-4 border-2 border-black text-left font-bold hover:bg-black hover:text-white transition flex justify-between items-center"><span>+ Post a New Need</span><span>â†’</span></button>
+                <button id="card-marketplace" class="p-4 border-2 border-black text-left font-bold hover:bg-black hover:text-white transition flex justify-between items-center"><span>Browse & Bid Jobs</span><span>â†’</span></button>
+                <button id="card-profile" class="p-4 border-2 border-black text-left font-bold hover:bg-black hover:text-white transition flex justify-between items-center"><span>My Profile & Ledger</span><span>â†’</span></button>
             </div>
         </div>
         <div class="border-2 border-black p-4 bg-white mt-4">
@@ -180,7 +181,7 @@
                         div.innerHTML = '<p class="text-sm">No operators found in SQLite ledger.</p>';
                         return;
                     }
-                    div.innerHTML = data.map(o => `<div class="border-b border-black py-2"><div><b>${o.name||o.id}</b> — <i>${o.pools||''}</i></div><div class="text-right font-bold text-xs mt-1">${o.hc_balance} HC / $${o.usd_earned||0} USD</div></div>`).join('');
+                    div.innerHTML = data.map(o => `<div class="border-b border-black py-2"><div><b>${o.name||o.id}</b> â€” <i>${o.pools||''}</i></div><div class="text-right font-bold text-xs mt-1">${o.hc_balance} HC / $${o.usd_earned||0} USD</div></div>`).join('');
                 } catch (err) { console.error(err); }
             }
 
@@ -226,3 +227,4 @@
     </script>
 </body>
 </html>
+

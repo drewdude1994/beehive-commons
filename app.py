@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request, send_from_directory, redirect
+﻿from flask import Flask, jsonify, request, send_from_directory, redirect
 from flask_cors import CORS
 import uuid, os, json, requests, base64
 from datetime import datetime
@@ -363,3 +363,4 @@ if __name__ == "__main__":
     print(f"Rate: 1 HC = ${HC_TO_USD_RATE}")
     print(f"PayPal Mode: {PAYPAL_MODE} - Enabled: {paypal_enabled()}")
     app.run(host="0.0.0.0", port=5000, debug=True)
+
