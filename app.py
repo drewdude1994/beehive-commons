@@ -22,9 +22,10 @@ PAYPAL_API_BASE = "https://api-m.sandbox.paypal.com" if PAYPAL_MODE == "sandbox"
 
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
-if STRIPE_SECRET_KEY:
+if STRIPE_SECRET_KEY or STRIPE_WEBHOOK_SECRET:
     import stripe
-    stripe.api_key = STRIPE_SECRET_KEY
+    if STRIPE_SECRET_KEY:
+        stripe.api_key = STRIPE_SECRET_KEY
 
 def stripe_enabled():
     return bool(STRIPE_SECRET_KEY)
@@ -34,10 +35,15 @@ def stripe_enabled():
 # Stripe is not configured.
 PAYPAL_ME_USERNAME = os.getenv("PAYPAL_ME_USERNAME", "").strip().replace("https://paypal.me/", "").strip("/")
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "")
+# Pay-what-you-want Payment Link (dashboard-created, no API secret key
+# needed). The site appends ?prefilled_amount=<cents>&client_reference_id=<need_id>.
+STRIPE_PAYMENT_LINK_URL = os.getenv("STRIPE_PAYMENT_LINK_URL", "").strip()
 
 def payment_mode():
     if stripe_enabled():
         return "stripe"
+    if STRIPE_PAYMENT_LINK_URL:
+        return "stripe_link"
     if PAYPAL_ME_USERNAME:
         return "paypal_me"
     return "none"
@@ -123,6 +129,7 @@ def config():
         "STRIPE_ENABLED": stripe_enabled(),
         "PAYMENT_MODE": payment_mode(),
         "PAYPAL_ME_URL": f"https://paypal.me/{PAYPAL_ME_USERNAME}" if PAYPAL_ME_USERNAME else "",
+        "STRIPE_LINK_URL": STRIPE_PAYMENT_LINK_URL if payment_mode() == "stripe_link" else "",
         "RATE": f"1 HC = ${HC_TO_USD_RATE}"
     })
 
@@ -186,7 +193,7 @@ def create_need():
     conn.execute("INSERT INTO needs VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                  (nid, data.get("type","general"), data.get("description",""), urgency, desirability, baseline, value,
                   data.get("zone","46250"), json.dumps(data.get("required_pools",["real_world_ops"])),
-                  "pending_verification" if payment_mode() == "paypal_me" else "open", data.get("posted_by","drew"), None, datetime.utcnow().isoformat()))
+                  "pending_verification" if payment_mode() in ("paypal_me", "stripe_link") else "open", data.get("posted_by","drew"), None, datetime.utcnow().isoformat()))
     conn.commit()
     conn.close()
     fee_hc, fee_usd, net_hc = calc_fee(value)
@@ -265,12 +272,11 @@ def pay():
         conn.close()
         return jsonify({"error": msg}), 400
     mode = payment_mode()
-    if mode == "stripe":
-        funded = conn.execute("SELECT id FROM stripe_payments WHERE need_id=? AND status='paid'", (need_id,)).fetchone()
-    elif mode == "paypal_me":
-        funded = conn.execute("SELECT id FROM paypal_payments WHERE need_id=? AND status='paid'", (need_id,)).fetchone()
-    else:
+    if mode == "none":
         funded = True
+    else:
+        funded = conn.execute("SELECT id FROM stripe_payments WHERE need_id=? AND status='paid'", (need_id,)).fetchone() or \
+                 conn.execute("SELECT id FROM paypal_payments WHERE need_id=? AND status='paid'", (need_id,)).fetchone()
     if not funded:
         conn.close()
         return jsonify({"error": "Job not funded - the poster's payment must be confirmed before the worker can be paid out", "funding_required": True}), 402
@@ -319,10 +325,12 @@ def pay():
 # worker can be paid out. The platform Stripe account receives the
 # gross amount; the platform fee + PayPal payout flow stays unchanged.
 
-def fund_need_from_session(session):
-    """Idempotently record a paid Stripe Checkout session and fund its need."""
+def fund_need_from_session(session, require_full_amount=False):
+    """Idempotently record a paid Stripe Checkout session and fund its need.
+    Works for API-created Checkout sessions (metadata.need_id) and for
+    Payment Link sessions (client_reference_id)."""
     metadata = session.get("metadata") or {}
-    need_id = metadata.get("need_id")
+    need_id = metadata.get("need_id") or session.get("client_reference_id")
     if not need_id:
         return None
     conn = get_conn()
@@ -330,15 +338,19 @@ def fund_need_from_session(session):
     if not need:
         conn.close()
         return None
+    paid_usd = round((session.get("amount_total") or 0) / 100.0, 2)
+    expected_usd = round(float(need["barter_value"]) * HC_TO_USD_RATE, 2)
+    if require_full_amount and paid_usd + 0.005 < expected_usd:
+        conn.close()
+        return f"underpaid:{need_id}"
     already = conn.execute("SELECT id FROM stripe_payments WHERE session_id=? AND status='paid'", (session["id"],)).fetchone()
     if not already:
         pid = f"pay_{uuid.uuid4().hex[:8]}"
         conn.execute("INSERT INTO stripe_payments VALUES (?,?,?,?,?,?,?,?)", (
             pid, need_id, session["id"], session.get("payment_intent") or "",
             metadata.get("payer_id", need["posted_by"]),
-            round((session.get("amount_total") or 0) / 100.0, 2), "paid",
-            datetime.utcnow().isoformat()))
-        if need["status"] == "open":
+            paid_usd, "paid", datetime.utcnow().isoformat()))
+        if need["status"] in ("open", "pending_verification"):
             conn.execute("UPDATE needs SET status='funded' WHERE id=?", (need_id,))
     conn.commit()
     conn.close()
@@ -409,19 +421,43 @@ def checkout_status():
 @app.route("/api/stripe_webhook", methods=["POST"])
 def stripe_webhook():
     # Unsigned webhooks are rejected: without the webhook secret this
-    # endpoint would let anyone mark a job as funded for free. Without
-    # the secret configured, funding is verified via /api/checkout_status
-    # instead (which checks directly with Stripe).
-    if not (stripe_enabled() and STRIPE_WEBHOOK_SECRET):
+    # endpoint would let anyone mark a job as funded for free. The webhook
+    # secret alone (no API secret key) is enough for Payment Link mode.
+    if not STRIPE_WEBHOOK_SECRET:
         return jsonify({"error": "webhooks not configured"}), 503
     sig = request.headers.get("Stripe-Signature", "")
     try:
-        event = stripe.Webhook.construct_event(request.data, sig, STRIPE_WEBHOOK_SECRET)
+        event = stripe.Webhook.construct_event(request.data, sig, STRIPE_WEBHOOK_SECRET).to_dict()
     except Exception as e:
         return jsonify({"error": f"webhook rejected: {str(e)}"}), 400
     if event.get("type") == "checkout.session.completed":
-        fund_need_from_session(event["data"]["object"])
+        fund_need_from_session(event["data"]["object"], require_full_amount=True)
     return jsonify({"received": True})
+
+@app.route("/api/create_link_payment", methods=["POST"])
+def create_link_payment():
+    """Stripe Payment Link mode: build a pay-what-you-want link URL with the
+    job amount prefilled and the job ID attached for reconciliation.
+    Needs no Stripe API secret key - only a dashboard Payment Link."""
+    data = request.json or {}
+    need_id = data.get("need_id")
+    conn = get_conn()
+    need = conn.execute("SELECT * FROM needs WHERE id=?", (need_id,)).fetchone()
+    conn.close()
+    if not need:
+        return jsonify({"error": "need not found"}), 404
+    if payment_mode() != "stripe_link":
+        return jsonify({"error": "Stripe payment link not configured"}), 400
+    conn = get_conn()
+    already = conn.execute("SELECT id FROM stripe_payments WHERE need_id=? AND status='paid'", (need_id,)).fetchone() or conn.execute("SELECT id FROM paypal_payments WHERE need_id=? AND status='paid'", (need_id,)).fetchone()
+    conn.close()
+    if already:
+        return jsonify({"already_funded": True, "message": "This job is already funded."})
+    cents = int(round(float(need["barter_value"]) * HC_TO_USD_RATE * 100))
+    if cents < 50:
+        return jsonify({"error": "Job value is below the $0.50 Stripe minimum - raise the baseline"}), 400
+    url = f"{STRIPE_PAYMENT_LINK_URL}?prefilled_amount={cents}&client_reference_id={need_id}"
+    return jsonify({"link_url": url, "amount_usd": round(cents / 100.0, 2)})
 
 @app.route("/api/refund", methods=["POST"])
 def refund_need():
