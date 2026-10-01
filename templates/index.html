@@ -98,10 +98,34 @@
         </div>
     </div>
 
+    <div id="view-pay" class="max-w-xl mx-auto space-y-4 relative z-10" style="display: none;">
+        <h2 class="text-xl font-bold">// PAY FOR YOUR JOB</h2>
+        <div class="border-2 border-black p-6 bg-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] space-y-4">
+            <p class="text-sm">Your job is ready. Pay the job amount below — the PayPal page opens with the amount already filled in.</p>
+            <div id="pay-summary" class="border-2 border-black p-3 bg-amber-50 text-sm font-bold"></div>
+            <a id="paypal-link" href="#" target="_blank" rel="noopener" class="block text-center w-full bg-black text-white font-bold p-3 border-2 border-black hover:bg-white hover:text-black transition">PAY WITH PAYPAL</a>
+            <p class="text-xs text-gray-600">After you pay, come back to this tab and click the button below. Your job goes live once the payment is confirmed.</p>
+            <button id="btn-paid" class="w-full bg-black text-white font-bold p-3 border-2 border-black hover:bg-white hover:text-black transition">I'VE PAID — SUBMIT MY JOB FOR CONFIRMATION</button>
+            <button id="btn-pay-later" class="w-full border-2 border-black bg-white p-2 text-xs font-bold hover:bg-black hover:text-white transition">I'LL PAY LATER</button>
+        </div>
+    </div>
+
+    <div id="view-admin" class="max-w-xl mx-auto space-y-4 relative z-10" style="display: none;">
+        <h2 class="text-xl font-bold">// ADMIN — PAYMENT DESK</h2>
+        <div class="border-2 border-black p-4 bg-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
+            <h3 class="text-xs font-bold mb-2">PAYMENTS WAITING FOR CONFIRMATION</h3>
+            <div id="admin-pending" class="space-y-2 text-xs">Loading...</div>
+        </div>
+        <div class="border-2 border-black p-4 bg-white">
+            <h3 class="text-xs font-bold mb-2">JOBS AWAITING PAYOUT — SEND VIA PAYPAL, THEN MARK PAID</h3>
+            <div id="admin-payouts" class="space-y-2 text-xs">Loading...</div>
+        </div>
+    </div>
+
     <script>
-        document.addEventListener("DOMContentLoaded", () => {
+        document.addEventListener("DOMContentLoaded", async () => {
             window.switchView = function(name) {
-                ['menu','creator','marketplace','profile'].forEach(v => {
+                ['menu','creator','marketplace','profile','pay','admin'].forEach(v => {
                     let el = document.getElementById('view-' + v);
                     if(el) el.style.display = 'none';
                 });
@@ -110,7 +134,14 @@
                 if(name === 'marketplace') loadNeeds();
                 if(name === 'profile') loadOperators();
                 if(name === 'menu') loadPlatformEarnings();
+                if(name === 'admin') loadAdmin();
             }
+
+            // --- Payment config from server ---
+            let CONFIG = {};
+            try { CONFIG = await (await fetch('/api/config')).json(); } catch(e) {}
+            window.PAYMENT_MODE = CONFIG.PAYMENT_MODE || 'none';
+            let pendingJob = null;
 
             // --- Logged-in operator (persisted in this browser) ---
             let currentOperator = null;
@@ -172,7 +203,7 @@
                         div.innerHTML = '<p class="text-sm bg-white p-4 border-2 border-black">No active jobs found. Post one!</p>';
                         return;
                     }
-                    div.innerHTML = data.map(n => `<div class="border-2 border-black p-4 bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]"><strong>${n.type || n.title || 'Need'} - ${n.barter_value} HC ($${(n.gross_usd||0).toFixed(2)})</strong><p class="text-xs mt-1">${n.description || 'No description'}</p><p class="text-[10px] mt-2">Fee: ${n.fee_hc||''} HC ($${n.fee_usd||''}) | Net: ${n.net_hc||''} HC | Status: ${n.status}${n.funded ? '' : ' - AWAITING PAYMENT'}</p><div class="mt-2 flex gap-2"><button onclick="claimNeed('${n.id}')" class="text-xs border-2 border-black px-2 py-1 bg-black text-white">CLAIM</button><button onclick="completeNeed('${n.id}')" class="text-xs border-2 border-black px-2 py-1">COMPLETE</button>${n.funded ? '' : `<button onclick="fundNeed('${n.id}')" class="text-xs border-2 border-black px-2 py-1 bg-yellow-300 font-bold">FUND $${(n.gross_usd||0).toFixed(2)}</button>`}${(currentOperator && currentOperator.id === n.posted_by && n.funded && n.status !== 'paid' && n.status !== 'needs_attestation' && n.status !== 'cancelled') ? `<button onclick="refundNeed('${n.id}')" class="text-xs border-2 border-black px-2 py-1 bg-red-200 font-bold">CANCEL & REFUND $${(n.gross_usd||0).toFixed(2)}</button>` : ''}</div></div>`).join('');
+                    div.innerHTML = data.map(n => `<div class="border-2 border-black p-4 bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]"><strong>${n.type || n.title || 'Need'} - ${n.barter_value} HC ($${(n.gross_usd||0).toFixed(2)})</strong><p class="text-xs mt-1">${n.description || 'No description'}</p><p class="text-[10px] mt-2">Fee: ${n.fee_hc||''} HC ($${n.fee_usd||''}) | Net: ${n.net_hc||''} HC | Status: ${n.status}${n.funded ? '' : ' - AWAITING PAYMENT'}</p><div class="mt-2 flex gap-2"><button onclick="claimNeed('${n.id}')" class="text-xs border-2 border-black px-2 py-1 bg-black text-white">CLAIM</button><button onclick="completeNeed('${n.id}')" class="text-xs border-2 border-black px-2 py-1">COMPLETE</button>${(!n.funded && window.PAYMENT_MODE === 'stripe') ? `<button onclick="fundNeed('${n.id}')" class="text-xs border-2 border-black px-2 py-1 bg-yellow-300 font-bold">FUND $${(n.gross_usd||0).toFixed(2)}</button>` : ''}${(window.PAYMENT_MODE === 'stripe' && currentOperator && currentOperator.id === n.posted_by && n.funded && n.status !== 'paid' && n.status !== 'needs_attestation' && n.status !== 'cancelled') ? `<button onclick="refundNeed('${n.id}')" class="text-xs border-2 border-black px-2 py-1 bg-red-200 font-bold">CANCEL & REFUND $${(n.gross_usd||0).toFixed(2)}</button>` : ''}</div></div>`).join('');
                 } catch (err) { console.error(err); }
             }
             window.fundNeed = async function(id){
@@ -303,11 +334,77 @@
                 let co = await fetch('/api/create_checkout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({need_id:j.id})});
                 let cj = await co.json();
                 if(cj.checkout_url) { window.location.href = cj.checkout_url; return; }
+                if(window.PAYMENT_MODE === 'paypal_me' && CONFIG.PAYPAL_ME_URL) {
+                    let amount = (j.barter_value * (CONFIG.HC_TO_USD_RATE || 1)).toFixed(2);
+                    document.getElementById('pay-summary').textContent = 'Job: ' + (title || 'Community need') + ' — Amount due: $' + amount;
+                    document.getElementById('paypal-link').href = CONFIG.PAYPAL_ME_URL + '/' + amount;
+                    document.getElementById('paypal-link').textContent = 'PAY $' + amount + ' WITH PAYPAL';
+                    pendingJob = { id: j.id, amount: amount };
+                    switchView('pay');
+                    return;
+                }
                 alert('Created: '+j.id+' Value: '+j.barter_value+' HC Fee: '+j.fee_usd+' USD' + (cj.message ? ' (' + cj.message + ')' : ''));
                 switchView('marketplace');
                 document.getElementById('need-form').reset();
                 calcPreview();
             });
+
+            document.getElementById('btn-paid')?.addEventListener('click', () => {
+                alert('Job submitted. It goes live as soon as your PayPal payment is confirmed.');
+                pendingJob = null;
+                switchView('menu');
+            });
+            document.getElementById('btn-pay-later')?.addEventListener('click', () => {
+                pendingJob = null;
+                switchView('menu');
+            });
+
+            function adminHeaders(){ return {'Content-Type':'application/json','X-Admin-Token': localStorage.getItem('beehive_admin_token') || ''}; }
+
+            async function loadAdmin(){
+                let tok = localStorage.getItem('beehive_admin_token');
+                if(!tok) { tok = prompt('Enter the admin token:'); if(!tok) return; localStorage.setItem('beehive_admin_token', tok); }
+                try {
+                    let res = await fetch('/api/admin/pending', {headers: adminHeaders()});
+                    if(res.status === 401) { localStorage.removeItem('beehive_admin_token'); alert('Bad admin token - try again.'); return; }
+                    let pend = await res.json();
+                    let div = document.getElementById('admin-pending');
+                    div.innerHTML = pend.length ? pend.map(n => `<div class="border-b border-black py-2 flex justify-between items-center gap-2"><div><b>${n.type || n.id}</b> — $${(n.gross_usd||0).toFixed(2)} — posted by ${n.posted_by}</div><div class="flex gap-2"><button onclick="adminFund('${n.id}')" class="text-xs border-2 border-black px-2 py-1 bg-green-200 font-bold">FUNDED ✓</button><button onclick="adminReject('${n.id}')" class="text-xs border-2 border-black px-2 py-1 bg-red-200 font-bold">DECLINE</button></div></div>`).join('') : '<p class="text-xs text-gray-600">No payments waiting for review.</p>';
+                    let res2 = await fetch('/api/admin/payout_queue', {headers: adminHeaders()});
+                    let q = await res2.json();
+                    let div2 = document.getElementById('admin-payouts');
+                    div2.innerHTML = q.length ? q.map(n => `<div class="border-b border-black py-2"><div><b>${n.type || n.id}</b> — worker: <b>${n.worker_name}</b> (${n.worker_email}) — owes worker: <b>$${n.net_usd}</b> — attestations: ${n.attestations}${n.ready ? ' ✓ ready' : ' (not ready yet)'}</div><div class="mt-1"><button onclick="adminPay('${n.id}')" class="text-xs border-2 border-black px-2 py-1 bg-black text-white font-bold">MARK PAID (after sending PayPal)</button></div></div>`).join('') : '<p class="text-xs text-gray-600">No jobs waiting for payout.</p>';
+                } catch(e) { alert('Admin panel failed to load: ' + e); }
+            }
+
+            window.adminFund = async function(id){
+                try {
+                    let res = await fetch('/api/admin/fund',{method:'POST',headers:adminHeaders(),body:JSON.stringify({need_id:id})});
+                    let j = await res.json();
+                    alert(j.message || j.error || 'Done');
+                } catch(e) { alert('Failed: ' + e); }
+                loadAdmin();
+            };
+            window.adminReject = async function(id){
+                if(!confirm('Decline this job? No payment was received, so the job is discarded.')) return;
+                try {
+                    let res = await fetch('/api/admin/reject',{method:'POST',headers:adminHeaders(),body:JSON.stringify({need_id:id})});
+                    let j = await res.json();
+                    alert(j.message || j.error || 'Done');
+                } catch(e) { alert('Failed: ' + e); }
+                loadAdmin();
+            };
+            window.adminPay = async function(id){
+                if(!confirm('Only click this AFTER you have sent the worker their PayPal payment. Marked?')) return;
+                try {
+                    let res = await fetch('/api/pay',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({need_id:id})});
+                    let j = await res.json();
+                    alert(j.message || j.error || 'Done');
+                } catch(e) { alert('Failed: ' + e); }
+                loadAdmin();
+            };
+
+            if(window.location.hash === '#admin') switchView('admin');
         });
     </script>
 </body>

@@ -29,6 +29,19 @@ if STRIPE_SECRET_KEY:
 def stripe_enabled():
     return bool(STRIPE_SECRET_KEY)
 
+# PayPal.me fallback: poster pays the platform's paypal.me link with the
+# amount prefilled; Drew confirms receipt in the admin panel. Used when
+# Stripe is not configured.
+PAYPAL_ME_USERNAME = os.getenv("PAYPAL_ME_USERNAME", "").strip().replace("https://paypal.me/", "").strip("/")
+ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "")
+
+def payment_mode():
+    if stripe_enabled():
+        return "stripe"
+    if PAYPAL_ME_USERNAME:
+        return "paypal_me"
+    return "none"
+
 def paypal_enabled():
     return bool(PAYPAL_CLIENT_ID and PAYPAL_SECRET)
 
@@ -108,6 +121,8 @@ def config():
         "PAYPAL_MODE": PAYPAL_MODE,
         "PAYPAL_ENABLED": paypal_enabled(),
         "STRIPE_ENABLED": stripe_enabled(),
+        "PAYMENT_MODE": payment_mode(),
+        "PAYPAL_ME_URL": f"https://paypal.me/{PAYPAL_ME_USERNAME}" if PAYPAL_ME_USERNAME else "",
         "RATE": f"1 HC = ${HC_TO_USD_RATE}"
     })
 
@@ -131,6 +146,7 @@ def needs():
     conn = get_conn()
     rows = [dict(r) for r in conn.execute("SELECT * FROM needs ORDER BY created_at DESC").fetchall()]
     paid_need_ids = set(row[0] for row in conn.execute("SELECT need_id FROM stripe_payments WHERE status='paid'").fetchall())
+    paypal_paid_ids = set(row[0] for row in conn.execute("SELECT need_id FROM paypal_payments WHERE status='paid'").fetchall())
     conn.close()
     for r in rows:
         try: r["required_pools"] = json.loads(r["required_pools"])
@@ -141,7 +157,7 @@ def needs():
         r["net_hc"] = net_hc
         r["net_usd"] = round(net_hc * HC_TO_USD_RATE, 2)
         r["gross_usd"] = round(float(r["barter_value"]) * HC_TO_USD_RATE, 2)
-        r["funded"] = (r["id"] in paid_need_ids) or not stripe_enabled()
+        r["funded"] = (r["id"] in paid_need_ids or r["id"] in paypal_paid_ids) or payment_mode() == "none"
     return jsonify(rows)
 
 @app.route("/api/ledger")
@@ -170,7 +186,7 @@ def create_need():
     conn.execute("INSERT INTO needs VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                  (nid, data.get("type","general"), data.get("description",""), urgency, desirability, baseline, value,
                   data.get("zone","46250"), json.dumps(data.get("required_pools",["real_world_ops"])),
-                  "open", data.get("posted_by","drew"), None, datetime.utcnow().isoformat()))
+                  "pending_verification" if payment_mode() == "paypal_me" else "open", data.get("posted_by","drew"), None, datetime.utcnow().isoformat()))
     conn.commit()
     conn.close()
     fee_hc, fee_usd, net_hc = calc_fee(value)
@@ -186,7 +202,7 @@ def claim():
     if not need:
         conn.close()
         return jsonify({"error": "need not found"}), 404
-    if need["status"] in ("cancelled", "paid"):
+    if need["status"] in ("cancelled", "paid", "pending_verification"):
         conn.close()
         return jsonify({"error": f"Job is {need['status']} and cannot be claimed"}), 400
     conn.execute("UPDATE needs SET claimed_by=?, status='claimed' WHERE id=?", (operator_id, need_id))
@@ -248,11 +264,16 @@ def pay():
     if not can:
         conn.close()
         return jsonify({"error": msg}), 400
-    if stripe_enabled():
-        paid_row = conn.execute("SELECT id FROM stripe_payments WHERE need_id=? AND status='paid'", (need_id,)).fetchone()
-        if not paid_row:
-            conn.close()
-            return jsonify({"error": "Job not funded - the poster must pay via Stripe before the worker can be paid out", "stripe_required": True}), 402
+    mode = payment_mode()
+    if mode == "stripe":
+        funded = conn.execute("SELECT id FROM stripe_payments WHERE need_id=? AND status='paid'", (need_id,)).fetchone()
+    elif mode == "paypal_me":
+        funded = conn.execute("SELECT id FROM paypal_payments WHERE need_id=? AND status='paid'", (need_id,)).fetchone()
+    else:
+        funded = True
+    if not funded:
+        conn.close()
+        return jsonify({"error": "Job not funded - the poster's payment must be confirmed before the worker can be paid out", "funding_required": True}), 402
     from_id = need["posted_by"]
     to_id = need["claimed_by"]
     amount = float(need["barter_value"])
@@ -447,6 +468,90 @@ def refund_need():
     conn.commit()
     conn.close()
     return jsonify({"ok": True, "message": f"Refunded ${refund_amount} to your card. Job {need_id} is cancelled."})
+
+# ---------------- ADMIN: PAYPAL.ME CONFIRMATION PANEL ----------------
+# Guarded by a shared admin token (ADMIN_TOKEN env var). Drew reviews
+# incoming PayPal.me payments here and confirms or declines them.
+
+def admin_authorized():
+    if not ADMIN_TOKEN:
+        return False
+    token = request.headers.get("X-Admin-Token", "") or request.args.get("token", "")
+    return token == ADMIN_TOKEN
+
+@app.route("/api/admin/pending")
+def admin_pending():
+    if not admin_authorized():
+        return jsonify({"error": "unauthorized"}), 401
+    conn = get_conn()
+    rows = [dict(r) for r in conn.execute("SELECT * FROM needs WHERE status='pending_verification' ORDER BY created_at DESC").fetchall()]
+    conn.close()
+    for r in rows:
+        r["gross_usd"] = round(float(r["barter_value"]) * HC_TO_USD_RATE, 2)
+    return jsonify(rows)
+
+@app.route("/api/admin/fund", methods=["POST"])
+def admin_fund():
+    if not admin_authorized():
+        return jsonify({"error": "unauthorized"}), 401
+    data = request.json or {}
+    need_id = data.get("need_id")
+    conn = get_conn()
+    need = conn.execute("SELECT * FROM needs WHERE id=?", (need_id,)).fetchone()
+    if not need:
+        conn.close()
+        return jsonify({"error": "need not found"}), 404
+    if need["status"] != "pending_verification":
+        conn.close()
+        return jsonify({"error": f"Job is {need['status']}, not pending payment review"}), 400
+    amount = round(float(need["barter_value"]) * HC_TO_USD_RATE, 2)
+    now = datetime.utcnow().isoformat()
+    conn.execute("INSERT INTO paypal_payments VALUES (?,?,?,?,?,?,?)", (f"ppy_{uuid.uuid4().hex[:8]}", need_id, need["posted_by"], amount, "paypal_me", "paid", now))
+    conn.execute("UPDATE needs SET status='funded' WHERE id=?", (need_id,))
+    conn.execute("INSERT INTO ledger VALUES (?,?,?,?,?,?,?,?,?)", (f"led_{uuid.uuid4().hex[:8]}", need["posted_by"], "hive_platform", 0.0, amount, "paypal_payment", need_id, f"Poster payment of ${amount} confirmed via PayPal for {need_id}", now))
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "message": f"Job {need_id} funded for ${amount}. It is now live."})
+
+@app.route("/api/admin/reject", methods=["POST"])
+def admin_reject():
+    if not admin_authorized():
+        return jsonify({"error": "unauthorized"}), 401
+    data = request.json or {}
+    need_id = data.get("need_id")
+    conn = get_conn()
+    need = conn.execute("SELECT status FROM needs WHERE id=?", (need_id,)).fetchone()
+    if not need:
+        conn.close()
+        return jsonify({"error": "need not found"}), 404
+    if need["status"] != "pending_verification":
+        conn.close()
+        return jsonify({"error": f"Job is {need['status']}, not pending payment review"}), 400
+    conn.execute("UPDATE needs SET status='cancelled' WHERE id=?", (need_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "message": f"Job {need_id} declined and cancelled."})
+
+@app.route("/api/admin/payout_queue")
+def admin_payout_queue():
+    if not admin_authorized():
+        return jsonify({"error": "unauthorized"}), 401
+    conn = get_conn()
+    rows = [dict(r) for r in conn.execute("SELECT * FROM needs WHERE status='needs_attestation' ORDER BY created_at DESC").fetchall()]
+    out = []
+    for r in rows:
+        can, msg = can_payout(r["id"])
+        worker = conn.execute("SELECT name, paypal_email FROM operators WHERE id=?", (r["claimed_by"],)).fetchone()
+        fee_hc, fee_usd, net_hc = calc_fee(r["barter_value"])
+        out.append({
+            "id": r["id"], "type": r["type"], "description": r["description"],
+            "worker_name": worker["name"] if worker else r["claimed_by"],
+            "worker_email": worker["paypal_email"] if worker else "",
+            "net_usd": round(net_hc * HC_TO_USD_RATE, 2), "fee_usd": fee_usd,
+            "attestations": len(get_attestations(r["id"])), "ready": can, "status_msg": msg
+        })
+    conn.close()
+    return jsonify(out)
 
 @app.route("/api/transfer", methods=["POST"])
 def transfer():

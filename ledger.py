@@ -19,6 +19,7 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS ledger (id TEXT PRIMARY KEY, from_id TEXT, to_id TEXT, amount REAL, usd_amount REAL, type TEXT, need_id TEXT, note TEXT, created_at TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS paypal_payouts (id TEXT PRIMARY KEY, batch_id TEXT, need_id TEXT, from_id TEXT, to_id TEXT, to_email TEXT, gross_amount REAL, fee_amount REAL, net_amount REAL, type TEXT, status TEXT, paypal_response TEXT, created_at TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS stripe_payments (id TEXT PRIMARY KEY, need_id TEXT, session_id TEXT, payment_intent TEXT, payer_id TEXT, amount_usd REAL, status TEXT, created_at TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS paypal_payments (id TEXT PRIMARY KEY, need_id TEXT, payer_id TEXT, amount_usd REAL, method TEXT, status TEXT, created_at TEXT)''')
     conn.commit()
     platform = c.execute("SELECT id FROM operators WHERE id='hive_platform'").fetchone()
     if not platform:
