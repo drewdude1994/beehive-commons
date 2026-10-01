@@ -6,6 +6,9 @@ from ledger import get_conn, init_db, barter_value, calc_fee, HC_TO_USD_RATE, PL
 from reputation import can_payout, get_attestations, check_attestation_threshold
 import pathlib
 
+FEE_DISPLAY = f"{PLATFORM_FEE_PCT*100:g}%"
+NET_PCT_DISPLAY = f"{(1-PLATFORM_FEE_PCT)*100:g}%"
+
 app = Flask(__name__, static_folder="static")
 CORS(app)
 init_db()
@@ -93,14 +96,14 @@ def index():
     static_index = BASE_DIR / "static" / "index.html"
     if static_index.exists():
         return send_from_directory("static", "index.html")
-    return jsonify({"status": "Beehive API running - WITH PAYPAL PAYOUTS", "ledger": "hive.db", "paypal_enabled": paypal_enabled(), "fee": "1.4%", "platform": PLATFORM_PAYPAL_EMAIL})
+    return jsonify({"status": "Beehive API running", "paypal_enabled": paypal_enabled(), "stripe_enabled": stripe_enabled(), "fee": FEE_DISPLAY, "platform": PLATFORM_PAYPAL_EMAIL})
 
 @app.route("/api/config")
 def config():
     return jsonify({
         "HC_TO_USD_RATE": HC_TO_USD_RATE,
         "PLATFORM_FEE_PCT": PLATFORM_FEE_PCT,
-        "PLATFORM_FEE_DISPLAY": "1.4%",
+        "PLATFORM_FEE_DISPLAY": FEE_DISPLAY,
         "PLATFORM_PAYPAL_EMAIL": PLATFORM_PAYPAL_EMAIL,
         "PAYPAL_MODE": PAYPAL_MODE,
         "PAYPAL_ENABLED": paypal_enabled(),
@@ -251,14 +254,14 @@ def pay():
     lid1 = f"led_{uuid.uuid4().hex[:8]}"
     lid2 = f"led_{uuid.uuid4().hex[:8]}"
     now = datetime.utcnow().isoformat()
-    conn.execute("INSERT INTO ledger VALUES (?,?,?,?,?,?,?,?,?)", (lid1, from_id, to_id, net_hc, net_usd, "task_payout_net", need_id, f"Net payout for {need_id} - 98.6%", now))
-    conn.execute("INSERT INTO ledger VALUES (?,?,?,?,?,?,?,?,?)", (lid2, from_id, "hive_platform", fee_hc, fee_usd, "platform_fee", need_id, f"Platform fee 1.4% for {need_id}", now))
+    conn.execute("INSERT INTO ledger VALUES (?,?,?,?,?,?,?,?,?)", (lid1, from_id, to_id, net_hc, net_usd, "task_payout_net", need_id, f"Net payout for {need_id} - {NET_PCT_DISPLAY}", now))
+    conn.execute("INSERT INTO ledger VALUES (?,?,?,?,?,?,?,?,?)", (lid2, from_id, "hive_platform", fee_hc, fee_usd, "platform_fee", need_id, f"Platform fee {FEE_DISPLAY} for {need_id}", now))
     conn.execute("UPDATE needs SET status='paid' WHERE id=?", (need_id,))
     conn.commit()
     # PayPal payouts
     payout_items = [
-        {"email": worker_email, "amount": net_usd, "note": f"Beehive payout {net_hc} HC (${net_usd}) for {need_id} - 98.6% - Thank you Operator!", "type": "worker"},
-        {"email": PLATFORM_PAYPAL_EMAIL, "amount": fee_usd, "note": f"Beehive platform fee {fee_hc} HC (${fee_usd}) 1.4% for {need_id}", "type": "platform"}
+        {"email": worker_email, "amount": net_usd, "note": f"Beehive payout {net_hc} HC (${net_usd}) for {need_id} - {NET_PCT_DISPLAY} - Thank you Operator!", "type": "worker"},
+        {"email": PLATFORM_PAYPAL_EMAIL, "amount": fee_usd, "note": f"Beehive platform fee {fee_hc} HC (${fee_usd}) {FEE_DISPLAY} for {need_id}", "type": "platform"}
     ]
     success, batch_id, paypal_resp, error = send_paypal_payouts(payout_items, need_id)
     if success:
@@ -268,7 +271,7 @@ def pay():
         conn.execute("INSERT INTO paypal_payouts VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", (pid2, batch_id, need_id, from_id, "hive_platform", PLATFORM_PAYPAL_EMAIL, gross_usd, fee_usd, fee_usd, "platform", "sent", json.dumps(paypal_resp), now))
         conn.commit()
         conn.close()
-        return jsonify({"ok": True, "paypal": True, "batch_id": batch_id, "gross": amount, "gross_usd": gross_usd, "fee_hc": fee_hc, "fee_usd": fee_usd, "net_hc": net_hc, "net_usd": net_usd, "worker_email": worker_email, "platform_email": PLATFORM_PAYPAL_EMAIL, "message": f"PAID: Worker got ${net_usd} (98.6%) to {worker_email}, Platform got ${fee_usd} (1.4%) to {PLATFORM_PAYPAL_EMAIL}", "paypal_response": paypal_resp})
+        return jsonify({"ok": True, "paypal": True, "batch_id": batch_id, "gross": amount, "gross_usd": gross_usd, "fee_hc": fee_hc, "fee_usd": fee_usd, "net_hc": net_hc, "net_usd": net_usd, "worker_email": worker_email, "platform_email": PLATFORM_PAYPAL_EMAIL, "message": f"PAID: Worker got ${net_usd} ({NET_PCT_DISPLAY}) to {worker_email}, Platform got ${fee_usd} ({FEE_DISPLAY}) to {PLATFORM_PAYPAL_EMAIL}", "paypal_response": paypal_resp})
     else:
         conn.close()
         return jsonify({"ok": True, "paypal": False, "paypal_pending": True, "gross": amount, "gross_usd": gross_usd, "fee_hc": fee_hc, "fee_usd": fee_usd, "net_hc": net_hc, "net_usd": net_usd, "worker_email": worker_email, "platform_email": PLATFORM_PAYPAL_EMAIL, "message": f"HC credited: Worker {net_hc} HC pending PayPal ${net_usd} to {worker_email}. Platform fee {fee_hc} HC pending ${fee_usd} to {PLATFORM_PAYPAL_EMAIL}. Reason: {error}", "error": error, "setup_hint": "Set PAYPAL_CLIENT_ID, PAYPAL_SECRET, PLATFORM_PAYPAL_EMAIL env vars on Render"})
@@ -276,7 +279,7 @@ def pay():
 # ---------------- STRIPE: FUNDING A JOB ----------------
 # A job must be paid for in real USD via Stripe Checkout before the
 # worker can be paid out. The platform Stripe account receives the
-# gross amount; the 1.4% fee + PayPal payout flow stays unchanged.
+# gross amount; the platform fee + PayPal payout flow stays unchanged.
 
 def fund_need_from_session(session):
     """Idempotently record a paid Stripe Checkout session and fund its need."""
@@ -482,7 +485,7 @@ def login():
     except:
         pass
     result["paypal_configured"] = paypal_enabled()
-    result["platform_fee"] = "1.4%"
+    result["platform_fee"] = FEE_DISPLAY
     return jsonify(result)
 
 if __name__ == "__main__":

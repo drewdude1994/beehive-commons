@@ -2,7 +2,7 @@ import sqlite3, os, json
 from datetime import datetime
 DB_PATH = os.path.join(os.path.dirname(__file__), "hive.db")
 HC_TO_USD_RATE = 1.0
-PLATFORM_FEE_PCT = 0.014
+PLATFORM_FEE_PCT = 0.10
 PLATFORM_PAYPAL_EMAIL = os.getenv("PLATFORM_PAYPAL_EMAIL", "drewdude1994@gmail.com")
 def get_conn():
     conn = sqlite3.connect(DB_PATH)
