@@ -27,6 +27,8 @@
             <button id="btn-creator" class="px-3 py-1 border-2 border-black bg-white text-xs font-bold hover:bg-black hover:text-white transition">+ POST NEED</button>
             <button id="btn-marketplace" class="px-3 py-1 border-2 border-black bg-white text-xs font-bold hover:bg-black hover:text-white transition">JOBS</button>
             <button id="btn-profile" class="px-3 py-1 border-2 border-black bg-white text-xs font-bold hover:bg-black hover:text-white transition">PROFILE</button>
+            <button id="btn-faq" class="px-3 py-1 border-2 border-black bg-white text-xs font-bold hover:bg-black hover:text-white transition">HOW IT WORKS</button>
+            <button id="btn-support" class="px-3 py-1 border-2 border-black bg-white text-xs font-bold hover:bg-black hover:text-white transition">SUPPORT</button>
         </nav>
     </header>
 
@@ -120,12 +122,66 @@
             <h3 class="text-xs font-bold mb-2">JOBS AWAITING PAYOUT — SEND VIA PAYPAL, THEN MARK PAID</h3>
             <div id="admin-payouts" class="space-y-2 text-xs">Loading...</div>
         </div>
+        <div class="border-2 border-black p-4 bg-white">
+            <h3 class="text-xs font-bold mb-2">SUPPORT INBOX — TICKETS FROM USERS</h3>
+            <div id="admin-tickets" class="space-y-2 text-xs">Loading...</div>
+        </div>
+    </div>
+
+    <div id="view-faq" class="max-w-xl mx-auto space-y-4 relative z-10" style="display: none;">
+        <h2 class="text-xl font-bold">// HOW THE HIVE WORKS</h2>
+        <div class="border-2 border-black p-4 bg-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] space-y-3">
+            <div class="border-b border-black pb-3">
+                <h3 class="text-sm font-bold">What is The Beehive Commons?</h3>
+                <p class="text-xs mt-1">A community job marketplace. Someone in your area needs something done — a yard cleaned out, furniture moved, a wall patched. They post the job and fund it upfront. An operator claims it, does the work, and gets paid through PayPal once the work is confirmed. Real people, real work, real money.</p>
+            </div>
+            <div class="border-b border-black pb-3">
+                <h3 class="text-sm font-bold">What does the 10% fee pay for?</h3>
+                <p id="faq-fee-line" class="text-[10px] text-gray-500 mt-1"></p>
+                <p class="text-xs mt-1">The platform keeps 10% of every job. In dollars: on a $20 job, $2 keeps the lights on and $18 goes to the worker. That's it — no subscriptions, no listing fees, no surprise charges. For comparison, the big gig apps take 20–30% or more.</p>
+            </div>
+            <div class="border-b border-black pb-3">
+                <h3 class="text-sm font-bold">When does the worker get paid?</h3>
+                <p class="text-xs mt-1">The job money is collected upfront and held before any work starts, so there is always money waiting for the worker. Once the job is marked complete and confirmed by attestations, the payout is sent to the worker's PayPal email — handled personally, typically within 24 hours.</p>
+            </div>
+            <div class="border-b border-black pb-3">
+                <h3 class="text-sm font-bold">What is an attestation?</h3>
+                <p class="text-xs mt-1">Proof the work actually happened. After an operator marks a job complete, 2–3 other people confirm it was done. This protects the person who paid: no confirmed work, no payout.</p>
+            </div>
+            <div class="border-b border-black pb-3">
+                <h3 class="text-sm font-bold">Can I get a refund?</h3>
+                <p class="text-xs mt-1">Yes. As the job poster, you can cancel and get a full refund to your card any time BEFORE the work is marked complete. Once the work is completed and attested, the money is committed to the worker — that's what keeps workers safe from doing a job and getting stiffed.</p>
+            </div>
+            <div class="border-b border-black pb-3">
+                <h3 class="text-sm font-bold">Is my payment safe?</h3>
+                <p class="text-xs mt-1">Job funding is processed by Stripe, the same payment processor used by millions of businesses. The Beehive never sees or stores your card number. If a job is cancelled before completion, your refund goes back to the same card.</p>
+            </div>
+            <div class="border-b border-black pb-3">
+                <h3 class="text-sm font-bold">Who runs this?</h3>
+                <p class="text-xs mt-1">Drew — an actual human you can talk to. No ticket numbers, no chatbot maze. If anything on this site confuses you or goes wrong, hit the SUPPORT tab and it goes straight to him.</p>
+            </div>
+            <button id="card-support-faq" class="w-full bg-black text-white font-bold p-3 border-2 border-black hover:bg-white hover:text-black transition">STILL HAVE A QUESTION? CONTACT SUPPORT →</button>
+        </div>
+    </div>
+
+    <div id="view-support" class="max-w-xl mx-auto space-y-4 relative z-10" style="display: none;">
+        <h2 class="text-xl font-bold">// SUPPORT</h2>
+        <div class="border-2 border-black p-4 bg-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
+            <p class="text-xs text-gray-600 mb-3">Tickets go straight to Drew, the human who runs this site. Replies come to your email — no bots, no phone menu.</p>
+            <form id="support-form" class="space-y-3">
+                <div><label class="text-xs font-bold">Your name:</label><input id="sup-name" type="text" required class="w-full border-2 border-black p-2 mt-1"></div>
+                <div><label class="text-xs font-bold">Your email (for the reply):</label><input id="sup-email" type="email" required placeholder="name@example.com" class="w-full border-2 border-black p-2 mt-1"></div>
+                <div><label class="text-xs font-bold">Job ID (optional — looks like need_ab12cd34):</label><input id="sup-job" type="text" class="w-full border-2 border-black p-2 mt-1"></div>
+                <div><label class="text-xs font-bold">What's going on?</label><textarea id="sup-message" rows="5" required class="w-full border-2 border-black p-2 mt-1"></textarea></div>
+                <button type="submit" class="w-full bg-black text-white font-bold p-2 border-2 border-black hover:bg-white hover:text-black transition">SEND TICKET TO DREW</button>
+            </form>
+        </div>
     </div>
 
     <script>
         document.addEventListener("DOMContentLoaded", async () => {
             window.switchView = function(name) {
-                ['menu','creator','marketplace','profile','pay','admin'].forEach(v => {
+                ['menu','creator','marketplace','profile','pay','admin','faq','support'].forEach(v => {
                     let el = document.getElementById('view-' + v);
                     if(el) el.style.display = 'none';
                 });
@@ -135,6 +191,7 @@
                 if(name === 'profile') loadOperators();
                 if(name === 'menu') loadPlatformEarnings();
                 if(name === 'admin') loadAdmin();
+                if(name === 'faq') loadFaqFee();
             }
 
             // --- Payment config from server ---
@@ -265,11 +322,40 @@
                 } catch (err) { console.error(err); }
             }
 
-            ['menu','creator','marketplace','profile'].forEach(id => {
+            ['menu','creator','marketplace','profile','faq','support'].forEach(id => {
                 let btn = document.getElementById('btn-' + id);
                 if(btn) btn.addEventListener('click', () => switchView(id));
                 let card = document.getElementById('card-' + id);
                 if(card) card.addEventListener('click', () => switchView(id));
+            });
+            let faqSupportBtn = document.getElementById('card-support-faq');
+            if(faqSupportBtn) faqSupportBtn.addEventListener('click', () => switchView('support'));
+
+            // --- FAQ: show the live fee straight from the server ---
+            function loadFaqFee(){
+                let el = document.getElementById('faq-fee-line');
+                if(el) el.textContent = 'Platform fee right now: ' + (CONFIG.PLATFORM_FEE_DISPLAY || '10%');
+            }
+
+            // --- Support ticket form ---
+            document.getElementById('support-form')?.addEventListener('submit', async (e)=>{
+                e.preventDefault();
+                const name = document.getElementById('sup-name').value.trim();
+                const email = document.getElementById('sup-email').value.trim();
+                const job = document.getElementById('sup-job').value.trim();
+                const message = document.getElementById('sup-message').value.trim();
+                if(!name || !email || !message) { alert('Name, email, and a message are required.'); return; }
+                const btn = e.target.querySelector('button[type=submit]');
+                if(btn) { btn.disabled = true; btn.textContent = 'SENDING...'; }
+                try {
+                    const res = await fetch('/api/support', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({name, email, job_id: job, message})});
+                    const j = await res.json();
+                    if(!res.ok) { alert('Could not send ticket: ' + (j.error || 'unknown error')); return; }
+                    alert('Ticket sent. Drew will reply to ' + email + '. Check your inbox (and spam folder) if you do not hear back.');
+                    document.getElementById('support-form').reset();
+                    switchView('menu');
+                } catch(err) { alert('Ticket request failed: ' + err); }
+                if(btn) { btn.disabled = false; btn.textContent = 'SEND TICKET TO DREW'; }
             });
 
             const tabLogin = document.getElementById('tab-login');
@@ -382,6 +468,10 @@
                     let pend = await res.json();
                     let div = document.getElementById('admin-pending');
                     div.innerHTML = pend.length ? pend.map(n => `<div class="border-b border-black py-2 flex justify-between items-center gap-2"><div><b>${n.type || n.id}</b> — $${(n.gross_usd||0).toFixed(2)} — posted by ${n.posted_by}</div><div class="flex gap-2"><button onclick="adminFund('${n.id}')" class="text-xs border-2 border-black px-2 py-1 bg-green-200 font-bold">FUNDED ✓</button><button onclick="adminReject('${n.id}')" class="text-xs border-2 border-black px-2 py-1 bg-red-200 font-bold">DECLINE</button></div></div>`).join('') : '<p class="text-xs text-gray-600">No payments waiting for review.</p>';
+                    let res3 = await fetch('/api/admin/tickets', {headers: adminHeaders()});
+                    let tickets = res3.ok ? await res3.json() : [];
+                    let div3 = document.getElementById('admin-tickets');
+                    if(div3) div3.innerHTML = tickets.length ? tickets.map(t => `<div class="border-b border-black py-2"><div><b>${t.name || 'anonymous'}</b> (${t.email})${t.job_id ? ' — job: ' + t.job_id : ''} — <i>${t.status}</i></div><div class="mt-1">${t.message}</div><div class="mt-1"><button onclick="adminTicketToggle('${t.id}')" class="text-xs border-2 border-black px-2 py-1 bg-white font-bold">${t.status === 'resolved' ? 'REOPEN' : 'MARK RESOLVED'}</button></div></div>`).join('') : '<p class="text-xs text-gray-600">No support tickets yet.</p>';
                     let res2 = await fetch('/api/admin/payout_queue', {headers: adminHeaders()});
                     let q = await res2.json();
                     let div2 = document.getElementById('admin-payouts');
@@ -403,6 +493,13 @@
                     let res = await fetch('/api/admin/reject',{method:'POST',headers:adminHeaders(),body:JSON.stringify({need_id:id})});
                     let j = await res.json();
                     alert(j.message || j.error || 'Done');
+                } catch(e) { alert('Failed: ' + e); }
+                loadAdmin();
+            };
+            window.adminTicketToggle = async function(id){
+                try {
+                    let res = await fetch('/api/admin/ticket_resolve',{method:'POST',headers:adminHeaders(),body:JSON.stringify({ticket_id:id})});
+                    if(!res.ok) { let j = await res.json(); alert(j.error || 'Failed'); }
                 } catch(e) { alert('Failed: ' + e); }
                 loadAdmin();
             };

@@ -589,6 +589,80 @@ def admin_payout_queue():
     conn.close()
     return jsonify(out)
 
+# ---------------- SUPPORT TICKETS ----------------
+# Users open tickets from the SUPPORT tab. Each ticket is stored in the
+# database (visible in the admin panel) and emailed to the support inbox
+# via FormSubmit (the same free service the Americas Son site uses).
+
+SUPPORT_EMAIL = os.getenv("SUPPORT_EMAIL", PLATFORM_PAYPAL_EMAIL)
+
+@app.route("/api/support", methods=["POST"])
+def create_support_ticket():
+    data = request.json or {}
+    name = (data.get("name") or "").strip()
+    email = (data.get("email") or "").strip()
+    job_id = (data.get("job_id") or "").strip()
+    message = (data.get("message") or "").strip()
+    if not name or not email or not message:
+        return jsonify({"error": "Name, email, and message are required"}), 400
+    if "@" not in email or "." not in email.split("@")[-1]:
+        return jsonify({"error": "That email address does not look valid"}), 400
+    if len(message) > 5000:
+        return jsonify({"error": "Message too long (5000 characters max)"}), 400
+    tid = f"sup_{uuid.uuid4().hex[:8]}"
+    now = datetime.utcnow().isoformat()
+    conn = get_conn()
+    conn.execute("INSERT INTO support_tickets VALUES (?,?,?,?,?,?,?)",
+                 (tid, name[:100], email[:200], job_id[:40], message, "open", now))
+    conn.commit()
+    conn.close()
+    # Email Drew a copy. The ticket is already saved, so an email failure
+    # is not fatal - the admin panel still shows the ticket.
+    email_status = "skipped"
+    try:
+        resp = requests.post(
+            "https://formsubmit.co/ajax/" + SUPPORT_EMAIL,
+            json={
+                "_subject": f"Beehive support ticket from {name}",
+                "_replyto": email,
+                "_captcha": "false",
+                "From": name,
+                "Job ID": job_id or "(no job referenced)",
+                "Message": message,
+            },
+            timeout=10,
+        )
+        email_status = "sent" if resp.status_code == 200 else f"email_http_{resp.status_code}"
+    except Exception as e:
+        email_status = f"email_failed: {str(e)[:120]}"
+    return jsonify({"ok": True, "id": tid, "message": "Ticket received. Drew will reply to your email.", "email_status": email_status})
+
+@app.route("/api/admin/tickets")
+def admin_tickets():
+    if not admin_authorized():
+        return jsonify({"error": "unauthorized"}), 401
+    conn = get_conn()
+    rows = [dict(r) for r in conn.execute("SELECT * FROM support_tickets ORDER BY created_at DESC LIMIT 100").fetchall()]
+    conn.close()
+    return jsonify(rows)
+
+@app.route("/api/admin/ticket_resolve", methods=["POST"])
+def admin_ticket_resolve():
+    if not admin_authorized():
+        return jsonify({"error": "unauthorized"}), 401
+    data = request.json or {}
+    tid = data.get("ticket_id")
+    conn = get_conn()
+    row = conn.execute("SELECT id, status FROM support_tickets WHERE id=?", (tid,)).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"error": "ticket not found"}), 404
+    new_status = "resolved" if row["status"] != "resolved" else "open"
+    conn.execute("UPDATE support_tickets SET status=? WHERE id=?", (new_status, tid))
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "status": new_status})
+
 @app.route("/api/transfer", methods=["POST"])
 def transfer():
     data = request.json
