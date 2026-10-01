@@ -20,7 +20,7 @@
     <header class="border-b-2 border-black pb-4 mb-6 flex justify-between items-center relative z-10">
         <div>
             <h1 class="text-xl font-bold">// THE BEEHIVE COMMONS</h1>
-            <p class="text-xs opacity-75">SQLite Ledger: hive.db | Cut: 1.4% | Phone: 10.0.0.83:5000</p>
+            <p class="text-xs opacity-75">Post a job. Get it done. Get paid. | Platform fee: 1.4%</p>
         </div>
         <nav class="space-x-2">
             <button id="btn-menu" class="px-3 py-1 border-2 border-black bg-white text-xs font-bold hover:bg-black hover:text-white transition">HOME</button>
@@ -33,7 +33,7 @@
     <div id="view-menu" class="max-w-xl mx-auto space-y-4 py-8 relative z-10" style="display: block;">
         <div class="border-2 border-black p-6 bg-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
             <h2 class="text-2xl font-bold mb-2">OPERATOR DASHBOARD</h2>
-            <p class="text-sm text-gray-600 mb-6">Select an option below to manage tasks, review balances, or post community needs. File ledger: hive.db - 1.4% goes to hive_platform.</p>
+            <p class="text-sm text-gray-600 mb-6">Post a community need, fund it with a card, and an operator claims and completes it. Attestations confirm the work was done. The worker gets paid; the hive keeps 1.4%.</p>
             <div class="grid grid-cols-1 gap-3">
                 <button id="card-creator" class="p-4 border-2 border-black text-left font-bold hover:bg-black hover:text-white transition flex justify-between items-center"><span>+ Post a New Need</span><span>→</span></button>
                 <button id="card-marketplace" class="p-4 border-2 border-black text-left font-bold hover:bg-black hover:text-white transition flex justify-between items-center"><span>Browse & Bid Jobs</span><span>→</span></button>
@@ -76,13 +76,15 @@
                 <button id="tab-create" class="px-4 py-1 border-2 border-black bg-white text-black text-xs font-bold hover:bg-gray-100">CREATE NEW PROFILE</button>
             </div>
             <div id="section-login" class="space-y-3">
-                <p class="text-xs text-gray-600">Enter your operator handle to access your existing ledger and portfolio:</p>
+                <p class="text-xs text-gray-600">Log in with your handle and password to access your ledger:</p>
                 <div><label class="text-xs font-bold">Operator Name / Handle:</label><input id="login-name" type="text" class="w-full border-2 border-black p-2 mt-1"></div>
+                <div><label class="text-xs font-bold">Password:</label><input id="login-password" type="password" class="w-full border-2 border-black p-2 mt-1"></div>
                 <button id="btn-submit-login" class="w-full bg-black text-white font-bold p-2 border-2 border-black hover:bg-white hover:text-black transition">ACCESS LEDGER</button>
             </div>
             <div id="section-create" class="space-y-3" style="display: none;">
                 <form id="profile-form" class="space-y-3">
                     <div><label class="text-xs font-bold">Operator Name:</label><input id="prof-name" type="text" required class="w-full border-2 border-black p-2 mt-1"></div>
+                    <div><label class="text-xs font-bold">Password (protects your ledger):</label><input id="prof-password" type="password" required class="w-full border-2 border-black p-2 mt-1"></div>
                     <div><label class="text-xs font-bold">PayPal Email (for job payouts):</label><input id="prof-paypal" type="email" required placeholder="name@example.com" class="w-full border-2 border-black p-2 mt-1"></div>
                     <div><label class="text-xs font-bold">Skills (comma separated):</label><input id="prof-skills" type="text" placeholder="e.g., Python, UI Design" class="w-full border-2 border-black p-2 mt-1"></div>
                     <div><label class="text-xs font-bold">Bio:</label><textarea id="prof-bio" rows="3" placeholder="Tell the commons about your background..." class="w-full border-2 border-black p-2 mt-1"></textarea></div>
@@ -91,7 +93,7 @@
             </div>
         </div>
         <div class="border-2 border-black p-4 bg-white">
-            <h3 class="text-sm font-bold mb-2">ACTIVE COMMONS OPERATORS (hive.db)</h3>
+            <h3 class="text-sm font-bold mb-2">ACTIVE COMMONS OPERATORS</h3>
             <div id="operators-list" class="space-y-2 text-xs">Loading operators...</div>
         </div>
     </div>
@@ -109,6 +111,30 @@
                 if(name === 'profile') loadOperators();
                 if(name === 'menu') loadPlatformEarnings();
             }
+
+            // --- Logged-in operator (persisted in this browser) ---
+            let currentOperator = null;
+            try { currentOperator = JSON.parse(localStorage.getItem('beehive_operator') || 'null'); } catch(e) { currentOperator = null; }
+
+            async function handleCheckoutReturn(){
+                const params = new URLSearchParams(window.location.search);
+                if(params.get('checkout') === 'success' && params.get('session_id')) {
+                    try {
+                        const res = await fetch('/api/checkout_status?session_id=' + encodeURIComponent(params.get('session_id')));
+                        const j = await res.json();
+                        if(j.payment_status === 'paid') {
+                            alert('Payment received - your job is funded and visible to operators.');
+                        } else {
+                            alert('Payment not confirmed yet: ' + (j.payment_status || j.error || 'unknown status'));
+                        }
+                    } catch(e) { alert('Could not verify payment with the server.'); }
+                    history.replaceState(null, '', window.location.pathname);
+                } else if(params.get('checkout') === 'cancelled') {
+                    alert('Payment cancelled - your job was not funded and will not pay out until it is.');
+                    history.replaceState(null, '', window.location.pathname);
+                }
+            }
+            handleCheckoutReturn();
 
             function calcPreview() {
                 const b = parseFloat(document.getElementById('need-baseline')?.value || 10);
@@ -146,11 +172,17 @@
                         div.innerHTML = '<p class="text-sm bg-white p-4 border-2 border-black">No active jobs found. Post one!</p>';
                         return;
                     }
-                    div.innerHTML = data.map(n => `<div class="border-2 border-black p-4 bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]"><strong>${n.type || n.title || 'Need'} - ${n.barter_value} HC</strong><p class="text-xs mt-1">${n.description || 'No description'}</p><p class="text-[10px] mt-2">Fee: ${n.fee_hc||''} HC ($${n.fee_usd||''}) | Net: ${n.net_hc||''} HC | Status: ${n.status}</p><div class="mt-2 flex gap-2"><button onclick="claimNeed('${n.id}')" class="text-xs border-2 border-black px-2 py-1 bg-black text-white">CLAIM</button><button onclick="completeNeed('${n.id}')" class="text-xs border-2 border-black px-2 py-1">COMPLETE</button></div></div>`).join('');
+                    div.innerHTML = data.map(n => `<div class="border-2 border-black p-4 bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]"><strong>${n.type || n.title || 'Need'} - ${n.barter_value} HC ($${(n.gross_usd||0).toFixed(2)})</strong><p class="text-xs mt-1">${n.description || 'No description'}</p><p class="text-[10px] mt-2">Fee: ${n.fee_hc||''} HC ($${n.fee_usd||''}) | Net: ${n.net_hc||''} HC | Status: ${n.status}${n.funded ? '' : ' - AWAITING PAYMENT'}</p><div class="mt-2 flex gap-2"><button onclick="claimNeed('${n.id}')" class="text-xs border-2 border-black px-2 py-1 bg-black text-white">CLAIM</button><button onclick="completeNeed('${n.id}')" class="text-xs border-2 border-black px-2 py-1">COMPLETE</button>${n.funded ? '' : `<button onclick="fundNeed('${n.id}')" class="text-xs border-2 border-black px-2 py-1 bg-yellow-300 font-bold">FUND $${(n.gross_usd||0).toFixed(2)}</button>`}</div></div>`).join('');
                 } catch (err) { console.error(err); }
             }
+            window.fundNeed = async function(id){
+                const res = await fetch('/api/create_checkout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({need_id:id})});
+                const j = await res.json();
+                if(j.checkout_url) { window.location.href = j.checkout_url; return; }
+                alert(j.message || j.error || 'Stripe is not configured yet.');
+            }
             window.claimNeed = async function(id){
-                let op = prompt('Your operator ID (drew/josh/neighbor_1):','drew');
+                let op = (currentOperator && currentOperator.id) || prompt('Log in first (PROFILE tab), or enter your operator ID:','drew');
                 if(!op) return;
                 await fetch('/api/claim',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({need_id:id,operator_id:op})});
                 loadNeeds();
@@ -210,6 +242,42 @@
                 });
             }
 
+            const btnSubmitLogin = document.getElementById('btn-submit-login');
+            if(btnSubmitLogin) {
+                if(currentOperator) btnSubmitLogin.textContent = 'LOGGED IN: ' + String(currentOperator.name || currentOperator.id).toUpperCase();
+                btnSubmitLogin.addEventListener('click', async () => {
+                    const handle = document.getElementById('login-name').value.trim();
+                    const password = document.getElementById('login-password').value;
+                    if(!handle || !password) { alert('Enter your handle and password.'); return; }
+                    try {
+                        const res = await fetch('/api/login', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({handle, password})});
+                        const j = await res.json();
+                        if(!res.ok) { alert('Login failed: ' + (j.error || 'unknown error')); return; }
+                        currentOperator = j;
+                        localStorage.setItem('beehive_operator', JSON.stringify(j));
+                        btnSubmitLogin.textContent = 'LOGGED IN: ' + String(j.name || j.id).toUpperCase();
+                        switchView('menu');
+                    } catch(e) { alert('Login request failed: ' + e); }
+                });
+            }
+
+            document.getElementById('profile-form')?.addEventListener('submit', async (e)=>{
+                e.preventDefault();
+                const name = document.getElementById('prof-name').value.trim();
+                const password = document.getElementById('prof-password').value;
+                const paypal = document.getElementById('prof-paypal').value.trim();
+                if(!name || !password || !paypal) { alert('Name, password, and PayPal email are required.'); return; }
+                try {
+                    const res = await fetch('/api/create_operator', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({id: name, name, password, paypal})});
+                    const j = await res.json();
+                    if(!res.ok) { alert('Registration failed: ' + (j.error || 'unknown error')); return; }
+                    currentOperator = j;
+                    localStorage.setItem('beehive_operator', JSON.stringify(j));
+                    alert('Profile created. You are logged in as ' + j.id + '.');
+                    switchView('menu');
+                } catch(e) { alert('Registration request failed: ' + e); }
+            });
+
             document.getElementById('need-form')?.addEventListener('submit', async (e)=>{
                 e.preventDefault();
                 let title = document.getElementById('need-title').value;
@@ -217,10 +285,17 @@
                 let baseline = parseFloat(document.getElementById('need-baseline').value);
                 let desirability = parseFloat(document.getElementById('need-desirability').value);
                 let urgency = parseFloat(document.getElementById('need-urgency').value);
-                let res = await fetch('/api/create_need',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:title,description:desc,baseline,desirability,urgency,posted_by:'drew',required_pools:['real_world_ops']})});
+                let poster = (currentOperator && currentOperator.id) || 'drew';
+                let res = await fetch('/api/create_need',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:title,description:desc,baseline,desirability,urgency,posted_by:poster,required_pools:['real_world_ops']})});
                 let j = await res.json();
-                alert('Created: '+j.id+' Value: '+j.barter_value+' HC Fee: '+j.fee_usd+' USD');
+                if(j.error) { alert('Could not post job: ' + j.error); return; }
+                let co = await fetch('/api/create_checkout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({need_id:j.id})});
+                let cj = await co.json();
+                if(cj.checkout_url) { window.location.href = cj.checkout_url; return; }
+                alert('Created: '+j.id+' Value: '+j.barter_value+' HC Fee: '+j.fee_usd+' USD' + (cj.message ? ' (' + cj.message + ')' : ''));
                 switchView('marketplace');
+                document.getElementById('need-form').reset();
+                calcPreview();
             });
         });
     </script>

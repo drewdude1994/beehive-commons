@@ -17,6 +17,15 @@ PAYPAL_SECRET = os.getenv("PAYPAL_SECRET", "")
 PAYPAL_MODE = os.getenv("PAYPAL_MODE", "sandbox")
 PAYPAL_API_BASE = "https://api-m.sandbox.paypal.com" if PAYPAL_MODE == "sandbox" else "https://api-m.paypal.com"
 
+STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
+STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+if STRIPE_SECRET_KEY:
+    import stripe
+    stripe.api_key = STRIPE_SECRET_KEY
+
+def stripe_enabled():
+    return bool(STRIPE_SECRET_KEY)
+
 def paypal_enabled():
     return bool(PAYPAL_CLIENT_ID and PAYPAL_SECRET)
 
@@ -95,6 +104,7 @@ def config():
         "PLATFORM_PAYPAL_EMAIL": PLATFORM_PAYPAL_EMAIL,
         "PAYPAL_MODE": PAYPAL_MODE,
         "PAYPAL_ENABLED": paypal_enabled(),
+        "STRIPE_ENABLED": stripe_enabled(),
         "RATE": f"1 HC = ${HC_TO_USD_RATE}"
     })
 
@@ -107,17 +117,17 @@ def operators():
         try: r["pools"] = json.loads(r["pools"])
         except: pass
         r.pop("password", None)
-        if r.get("paypal_email"):
-            email = r["paypal_email"]
-            if "@" in email and len(email) > 3:
-                parts = email.split("@")
-                r["paypal_email_masked"] = f"{parts[0][:2]}***@{parts[1]}"
+        paypal_email = r.pop("paypal_email", None)
+        if paypal_email and "@" in paypal_email and len(paypal_email) > 3:
+            parts = paypal_email.split("@")
+            r["paypal_email_masked"] = f"{parts[0][:2]}***@{parts[1]}"
     return jsonify(rows)
 
 @app.route("/api/needs")
 def needs():
     conn = get_conn()
     rows = [dict(r) for r in conn.execute("SELECT * FROM needs ORDER BY created_at DESC").fetchall()]
+    paid_need_ids = set(row[0] for row in conn.execute("SELECT need_id FROM stripe_payments WHERE status='paid'").fetchall())
     conn.close()
     for r in rows:
         try: r["required_pools"] = json.loads(r["required_pools"])
@@ -128,6 +138,7 @@ def needs():
         r["net_hc"] = net_hc
         r["net_usd"] = round(net_hc * HC_TO_USD_RATE, 2)
         r["gross_usd"] = round(float(r["barter_value"]) * HC_TO_USD_RATE, 2)
+        r["funded"] = (r["id"] in paid_need_ids) or not stripe_enabled()
     return jsonify(rows)
 
 @app.route("/api/ledger")
@@ -217,6 +228,11 @@ def pay():
     if not can:
         conn.close()
         return jsonify({"error": msg}), 400
+    if stripe_enabled():
+        paid_row = conn.execute("SELECT id FROM stripe_payments WHERE need_id=? AND status='paid'", (need_id,)).fetchone()
+        if not paid_row:
+            conn.close()
+            return jsonify({"error": "Job not funded - the poster must pay via Stripe before the worker can be paid out", "stripe_required": True}), 402
     from_id = need["posted_by"]
     to_id = need["claimed_by"]
     amount = float(need["barter_value"])
@@ -256,6 +272,115 @@ def pay():
     else:
         conn.close()
         return jsonify({"ok": True, "paypal": False, "paypal_pending": True, "gross": amount, "gross_usd": gross_usd, "fee_hc": fee_hc, "fee_usd": fee_usd, "net_hc": net_hc, "net_usd": net_usd, "worker_email": worker_email, "platform_email": PLATFORM_PAYPAL_EMAIL, "message": f"HC credited: Worker {net_hc} HC pending PayPal ${net_usd} to {worker_email}. Platform fee {fee_hc} HC pending ${fee_usd} to {PLATFORM_PAYPAL_EMAIL}. Reason: {error}", "error": error, "setup_hint": "Set PAYPAL_CLIENT_ID, PAYPAL_SECRET, PLATFORM_PAYPAL_EMAIL env vars on Render"})
+
+# ---------------- STRIPE: FUNDING A JOB ----------------
+# A job must be paid for in real USD via Stripe Checkout before the
+# worker can be paid out. The platform Stripe account receives the
+# gross amount; the 1.4% fee + PayPal payout flow stays unchanged.
+
+def fund_need_from_session(session):
+    """Idempotently record a paid Stripe Checkout session and fund its need."""
+    metadata = session.get("metadata") or {}
+    need_id = metadata.get("need_id")
+    if not need_id:
+        return None
+    conn = get_conn()
+    need = conn.execute("SELECT * FROM needs WHERE id=?", (need_id,)).fetchone()
+    if not need:
+        conn.close()
+        return None
+    already = conn.execute("SELECT id FROM stripe_payments WHERE session_id=? AND status='paid'", (session["id"],)).fetchone()
+    if not already:
+        pid = f"pay_{uuid.uuid4().hex[:8]}"
+        conn.execute("INSERT INTO stripe_payments VALUES (?,?,?,?,?,?,?,?)", (
+            pid, need_id, session["id"], session.get("payment_intent") or "",
+            metadata.get("payer_id", need["posted_by"]),
+            round((session.get("amount_total") or 0) / 100.0, 2), "paid",
+            datetime.utcnow().isoformat()))
+        if need["status"] == "open":
+            conn.execute("UPDATE needs SET status='funded' WHERE id=?", (need_id,))
+    conn.commit()
+    conn.close()
+    return need_id
+
+@app.route("/api/create_checkout", methods=["POST"])
+def create_checkout():
+    data = request.json or {}
+    need_id = data.get("need_id")
+    conn = get_conn()
+    need = conn.execute("SELECT * FROM needs WHERE id=?", (need_id,)).fetchone()
+    conn.close()
+    if not need:
+        return jsonify({"error": "need not found"}), 404
+    if not stripe_enabled():
+        return jsonify({"stripe_enabled": False, "message": "Stripe not configured - job posted without upfront payment. Set STRIPE_SECRET_KEY on Render to enable payments."})
+    conn = get_conn()
+    already_funded = conn.execute("SELECT id FROM stripe_payments WHERE need_id=? AND status='paid'", (need_id,)).fetchone()
+    conn.close()
+    if already_funded:
+        return jsonify({"stripe_enabled": True, "already_funded": True, "message": "This job is already funded."})
+    gross_usd = round(float(need["barter_value"]) * HC_TO_USD_RATE, 2)
+    cents = int(round(gross_usd * 100))
+    if cents < 50:
+        return jsonify({"error": f"Job value ${gross_usd} is below the Stripe minimum of $0.50 - raise the baseline"}), 400
+    base_url = request.host_url.rstrip("/")
+    session = stripe.checkout.Session.create(
+        mode="payment",
+        line_items=[{
+            "quantity": 1,
+            "price_data": {
+                "currency": "usd",
+                "unit_amount": cents,
+                "product_data": {
+                    "name": f"Beehive job: {need['type'] or 'Community need'}",
+                    "description": (need["description"] or "Community job posting")[:300]
+                }
+            }
+        }],
+        success_url=base_url + "/?checkout=success&session_id={CHECKOUT_SESSION_ID}",
+        cancel_url=base_url + "/?checkout=cancelled",
+        metadata={"need_id": need_id, "payer_id": need["posted_by"]}
+    )
+    return jsonify({"stripe_enabled": True, "checkout_url": session.url, "session_id": session.id, "amount_usd": gross_usd})
+
+@app.route("/api/checkout_status")
+def checkout_status():
+    session_id = request.args.get("session_id", "")
+    if not session_id:
+        return jsonify({"error": "session_id required"}), 400
+    if not stripe_enabled():
+        return jsonify({"stripe_enabled": False, "error": "Stripe not configured"}), 200
+    try:
+        session = stripe.checkout.Session.retrieve(session_id)
+    except Exception as e:
+        return jsonify({"error": f"Stripe lookup failed: {str(e)}"}), 502
+    paid = session.payment_status == "paid"
+    need_id = None
+    if paid:
+        need_id = fund_need_from_session(session)
+    else:
+        need_id = (session.metadata or {}).get("need_id")
+    conn = get_conn()
+    need = conn.execute("SELECT status FROM needs WHERE id=?", (need_id,)).fetchone() if need_id else None
+    conn.close()
+    return jsonify({"stripe_enabled": True, "payment_status": session.payment_status, "need_id": need_id, "need_status": need["status"] if need else None, "amount_usd": round((session.amount_total or 0) / 100.0, 2)})
+
+@app.route("/api/stripe_webhook", methods=["POST"])
+def stripe_webhook():
+    # Unsigned webhooks are rejected: without the webhook secret this
+    # endpoint would let anyone mark a job as funded for free. Without
+    # the secret configured, funding is verified via /api/checkout_status
+    # instead (which checks directly with Stripe).
+    if not (stripe_enabled() and STRIPE_WEBHOOK_SECRET):
+        return jsonify({"error": "webhooks not configured"}), 503
+    sig = request.headers.get("Stripe-Signature", "")
+    try:
+        event = stripe.Webhook.construct_event(request.data, sig, STRIPE_WEBHOOK_SECRET)
+    except Exception as e:
+        return jsonify({"error": f"webhook rejected: {str(e)}"}), 400
+    if event.get("type") == "checkout.session.completed":
+        fund_need_from_session(event["data"]["object"])
+    return jsonify({"received": True})
 
 @app.route("/api/transfer", methods=["POST"])
 def transfer():
@@ -326,6 +451,8 @@ def login():
         op_id = handle.lower().replace(" ", "_")
     if not op_id or not password:
         return jsonify({"error": "Handle and password required"}), 400
+    if op_id == "hive_platform":
+        return jsonify({"error": "The platform account cannot be logged into from the website"}), 403
     conn = get_conn()
     row = conn.execute("SELECT * FROM operators WHERE id=?", (op_id,)).fetchone()
     if not row:
@@ -349,6 +476,7 @@ def login():
     result = dict(row)
     conn.close()
     result.pop("password", None)
+    result.pop("paypal_email", None)
     try:
         result["pools"] = json.loads(result.get("pools","[]"))
     except:
@@ -362,59 +490,5 @@ if __name__ == "__main__":
     print(f"Fee: {PLATFORM_FEE_PCT*100}% -> {PLATFORM_PAYPAL_EMAIL}")
     print(f"Rate: 1 HC = ${HC_TO_USD_RATE}")
     print(f"PayPal Mode: {PAYPAL_MODE} - Enabled: {paypal_enabled()}")
+    print(f"Stripe: {'ENABLED' if stripe_enabled() else 'not configured (jobs post without payment)'}")
     app.run(host="0.0.0.0", port=5000, debug=True)
-
-# SAFE DISCRETE PAYPAL USER-TO-USER TRANSACTION ROUTE (PYTHON/FLASK)
-import os
-import time
-import requests
-from flask import request, jsonify
-
-PAYPAL_CLIENT_ID = os.environ.get('PAYPAL_CLIENT_ID')
-PAYPAL_CLIENT_SECRET = os.environ.get('PAYPAL_CLIENT_SECRET')
-PAYPAL_API = 'https://paypal.com'  # Live production URL
-
-def get_paypal_access_token():
-    try:
-        url = f"{PAYPAL_API}/v1/oauth2/token"
-        headers = {"Accept": "application/json", "Accept-Language": "en_US"}
-        data = {"grant_type": "client_credentials"}
-        response = requests.post(url, headers=headers, data=data, auth=(PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET), timeout=10)
-        return response.json().get('access_token')
-    except Exception:
-        return None
-
-if 'app' in globals() or 'app' in locals():
-    @app.route('/api/pay-user', methods=['POST'])
-    def pay_user_route():
-        data = request.get_json() or {}
-        receiver_email = data.get('receiverEmail')
-        amount = data.get('amount')
-        note = data.get('note', 'Beehive Payment')
-        
-        if not receiver_email or not amount:
-            return jsonify({"success": False, "error": "Missing email or amount"}), 400
-            
-        token = get_paypal_access_token()
-        if not token:
-            return jsonify({"success": False, "error": "Authentication gateway failed safely."}), 500
-            
-        try:
-            url = f"{PAYPAL_API}/v1/payouts"
-            headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-            payload = {
-                "sender_batch_header": {
-                    "sender_batch_id": f"batch_{int(time.time())}",
-                    "recipient_type": "EMAIL"
-                },
-                "items": [{
-                    "recipient_type": "EMAIL",
-                    "amount": {"value": str(amount), "currency": "USD"},
-                    "note": note,
-                    "receiver": receiver_email
-                }]
-            }
-            payout_response = requests.post(url, headers=headers, json=payload, timeout=15)
-            return jsonify({"success": True}), 200
-        except Exception:
-            return jsonify({"success": False, "error": "Transaction routing failed safely."}), 500
