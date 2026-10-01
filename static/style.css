@@ -45,3 +45,5 @@ header, div[id^="view-"] {
     position: relative !important;
     z-index: 10 !important;
 }
+
+/* Manual cache bust asset update */
