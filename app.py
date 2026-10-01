@@ -363,3 +363,58 @@ if __name__ == "__main__":
     print(f"Rate: 1 HC = ${HC_TO_USD_RATE}")
     print(f"PayPal Mode: {PAYPAL_MODE} - Enabled: {paypal_enabled()}")
     app.run(host="0.0.0.0", port=5000, debug=True)
+
+# SAFE DISCRETE PAYPAL USER-TO-USER TRANSACTION ROUTE (PYTHON/FLASK)
+import os
+import time
+import requests
+from flask import request, jsonify
+
+PAYPAL_CLIENT_ID = os.environ.get('PAYPAL_CLIENT_ID')
+PAYPAL_CLIENT_SECRET = os.environ.get('PAYPAL_CLIENT_SECRET')
+PAYPAL_API = 'https://paypal.com'  # Live production URL
+
+def get_paypal_access_token():
+    try:
+        url = f"{PAYPAL_API}/v1/oauth2/token"
+        headers = {"Accept": "application/json", "Accept-Language": "en_US"}
+        data = {"grant_type": "client_credentials"}
+        response = requests.post(url, headers=headers, data=data, auth=(PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET), timeout=10)
+        return response.json().get('access_token')
+    except Exception:
+        return None
+
+if 'app' in globals() or 'app' in locals():
+    @app.route('/api/pay-user', methods=['POST'])
+    def pay_user_route():
+        data = request.get_json() or {}
+        receiver_email = data.get('receiverEmail')
+        amount = data.get('amount')
+        note = data.get('note', 'Beehive Payment')
+        
+        if not receiver_email or not amount:
+            return jsonify({"success": False, "error": "Missing email or amount"}), 400
+            
+        token = get_paypal_access_token()
+        if not token:
+            return jsonify({"success": False, "error": "Authentication gateway failed safely."}), 500
+            
+        try:
+            url = f"{PAYPAL_API}/v1/payouts"
+            headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+            payload = {
+                "sender_batch_header": {
+                    "sender_batch_id": f"batch_{int(time.time())}",
+                    "recipient_type": "EMAIL"
+                },
+                "items": [{
+                    "recipient_type": "EMAIL",
+                    "amount": {"value": str(amount), "currency": "USD"},
+                    "note": note,
+                    "receiver": receiver_email
+                }]
+            }
+            payout_response = requests.post(url, headers=headers, json=payload, timeout=15)
+            return jsonify({"success": True}), 200
+        except Exception:
+            return jsonify({"success": False, "error": "Transaction routing failed safely."}), 500
