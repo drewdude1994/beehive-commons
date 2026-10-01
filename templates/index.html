@@ -172,7 +172,7 @@
                         div.innerHTML = '<p class="text-sm bg-white p-4 border-2 border-black">No active jobs found. Post one!</p>';
                         return;
                     }
-                    div.innerHTML = data.map(n => `<div class="border-2 border-black p-4 bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]"><strong>${n.type || n.title || 'Need'} - ${n.barter_value} HC ($${(n.gross_usd||0).toFixed(2)})</strong><p class="text-xs mt-1">${n.description || 'No description'}</p><p class="text-[10px] mt-2">Fee: ${n.fee_hc||''} HC ($${n.fee_usd||''}) | Net: ${n.net_hc||''} HC | Status: ${n.status}${n.funded ? '' : ' - AWAITING PAYMENT'}</p><div class="mt-2 flex gap-2"><button onclick="claimNeed('${n.id}')" class="text-xs border-2 border-black px-2 py-1 bg-black text-white">CLAIM</button><button onclick="completeNeed('${n.id}')" class="text-xs border-2 border-black px-2 py-1">COMPLETE</button>${n.funded ? '' : `<button onclick="fundNeed('${n.id}')" class="text-xs border-2 border-black px-2 py-1 bg-yellow-300 font-bold">FUND $${(n.gross_usd||0).toFixed(2)}</button>`}</div></div>`).join('');
+                    div.innerHTML = data.map(n => `<div class="border-2 border-black p-4 bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]"><strong>${n.type || n.title || 'Need'} - ${n.barter_value} HC ($${(n.gross_usd||0).toFixed(2)})</strong><p class="text-xs mt-1">${n.description || 'No description'}</p><p class="text-[10px] mt-2">Fee: ${n.fee_hc||''} HC ($${n.fee_usd||''}) | Net: ${n.net_hc||''} HC | Status: ${n.status}${n.funded ? '' : ' - AWAITING PAYMENT'}</p><div class="mt-2 flex gap-2"><button onclick="claimNeed('${n.id}')" class="text-xs border-2 border-black px-2 py-1 bg-black text-white">CLAIM</button><button onclick="completeNeed('${n.id}')" class="text-xs border-2 border-black px-2 py-1">COMPLETE</button>${n.funded ? '' : `<button onclick="fundNeed('${n.id}')" class="text-xs border-2 border-black px-2 py-1 bg-yellow-300 font-bold">FUND $${(n.gross_usd||0).toFixed(2)}</button>`}${(currentOperator && currentOperator.id === n.posted_by && n.funded && n.status !== 'paid' && n.status !== 'needs_attestation' && n.status !== 'cancelled') ? `<button onclick="refundNeed('${n.id}')" class="text-xs border-2 border-black px-2 py-1 bg-red-200 font-bold">CANCEL & REFUND $${(n.gross_usd||0).toFixed(2)}</button>` : ''}</div></div>`).join('');
                 } catch (err) { console.error(err); }
             }
             window.fundNeed = async function(id){
@@ -180,6 +180,17 @@
                 const j = await res.json();
                 if(j.checkout_url) { window.location.href = j.checkout_url; return; }
                 alert(j.message || j.error || 'Stripe is not configured yet.');
+            }
+            window.refundNeed = async function(id){
+                if(!confirm('Refund this job to your card and cancel it? If an operator already claimed it, they will lose the job.')) return;
+                const op = (currentOperator && currentOperator.id) || prompt('Your operator ID:');
+                if(!op) return;
+                try {
+                    const res = await fetch('/api/refund',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({need_id:id, requester_id:op})});
+                    const j = await res.json();
+                    alert(j.message || j.error || 'Done');
+                } catch(e) { alert('Refund request failed: ' + e); }
+                loadNeeds();
             }
             window.claimNeed = async function(id){
                 let op = (currentOperator && currentOperator.id) || prompt('Log in first (PROFILE tab), or enter your operator ID:','drew');

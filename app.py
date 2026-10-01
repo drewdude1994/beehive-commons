@@ -182,6 +182,13 @@ def claim():
     need_id = data["need_id"]
     operator_id = data["operator_id"]
     conn = get_conn()
+    need = conn.execute("SELECT status FROM needs WHERE id=?", (need_id,)).fetchone()
+    if not need:
+        conn.close()
+        return jsonify({"error": "need not found"}), 404
+    if need["status"] in ("cancelled", "paid"):
+        conn.close()
+        return jsonify({"error": f"Job is {need['status']} and cannot be claimed"}), 400
     conn.execute("UPDATE needs SET claimed_by=?, status='claimed' WHERE id=?", (operator_id, need_id))
     conn.commit()
     conn.close()
@@ -192,6 +199,13 @@ def complete():
     data = request.json
     need_id = data["need_id"]
     conn = get_conn()
+    need = conn.execute("SELECT status FROM needs WHERE id=?", (need_id,)).fetchone()
+    if not need:
+        conn.close()
+        return jsonify({"error": "need not found"}), 404
+    if need["status"] == "cancelled":
+        conn.close()
+        return jsonify({"error": "Job was cancelled and refunded - it cannot be completed"}), 400
     conn.execute("UPDATE needs SET status='needs_attestation' WHERE id=?", (need_id,))
     conn.commit()
     conn.close()
@@ -227,6 +241,9 @@ def pay():
         conn.close()
         return jsonify({"error": "need not found"}), 404
     need = dict(need)
+    if need["status"] in ("cancelled", "paid"):
+        conn.close()
+        return jsonify({"error": f"Job is {need['status']} - it cannot be paid out"}), 400
     can, msg = can_payout(need_id)
     if not can:
         conn.close()
@@ -384,6 +401,52 @@ def stripe_webhook():
     if event.get("type") == "checkout.session.completed":
         fund_need_from_session(event["data"]["object"])
     return jsonify({"received": True})
+
+@app.route("/api/refund", methods=["POST"])
+def refund_need():
+    """Job poster cancels a funded job and gets their card refunded.
+    Allowed until the work is completed - once the job is marked
+    complete/attested, the money is committed to the worker."""
+    data = request.json or {}
+    need_id = data.get("need_id")
+    requester = (data.get("requester_id") or "").strip()
+    conn = get_conn()
+    need = conn.execute("SELECT * FROM needs WHERE id=?", (need_id,)).fetchone()
+    if not need:
+        conn.close()
+        return jsonify({"error": "need not found"}), 404
+    need = dict(need)
+    if need["status"] == "paid":
+        conn.close()
+        return jsonify({"error": "Job already paid out - cannot refund"}), 400
+    if need["status"] == "needs_attestation":
+        conn.close()
+        return jsonify({"error": "Work is already completed and awaiting attestation - the money is committed to the worker"}), 400
+    if requester != need["posted_by"]:
+        conn.close()
+        return jsonify({"error": "Only the job poster can cancel and refund this job"}), 403
+    pay_row = conn.execute("SELECT * FROM stripe_payments WHERE need_id=? AND status='paid'", (need_id,)).fetchone()
+    if not pay_row:
+        conn.close()
+        return jsonify({"error": "This job was never funded, so there is nothing to refund"}), 400
+    refund_amount = float(pay_row["amount_usd"])
+    refund_note = None
+    if stripe_enabled() and pay_row["payment_intent"]:
+        try:
+            refund = stripe.Refund.create(payment_intent=pay_row["payment_intent"])
+            refund_note = refund.id
+        except Exception as e:
+            conn.close()
+            return jsonify({"error": f"Stripe refund failed: {str(e)}"}), 502
+    now = datetime.utcnow().isoformat()
+    conn.execute("UPDATE stripe_payments SET status='refunded' WHERE id=?", (pay_row["id"],))
+    conn.execute("UPDATE needs SET status='cancelled' WHERE id=?", (need_id,))
+    lid = f"led_{uuid.uuid4().hex[:8]}"
+    note = f"Refund of ${refund_amount} to poster for {need_id}" + (f" (Stripe refund {refund_note})" if refund_note else "")
+    conn.execute("INSERT INTO ledger VALUES (?,?,?,?,?,?,?,?,?)", (lid, "hive_platform", need["posted_by"], 0.0, refund_amount, "stripe_refund", need_id, note, now))
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "message": f"Refunded ${refund_amount} to your card. Job {need_id} is cancelled."})
 
 @app.route("/api/transfer", methods=["POST"])
 def transfer():
